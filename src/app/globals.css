@@ -19,3 +19,89 @@ body {
   background: var(--color-ink);
   color: var(--color-txt);
 }
+
+/* the receipts leak - little confessions drifting up off the button.
+   Ported 1:1 from the legacy .sec / @keyframes secUp rules. */
+@keyframes secUp {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--sx, 0px)), 16px)
+      scale(calc(0.84 * var(--sc, 1))) rotate(var(--sr, 0deg));
+  }
+  14% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--sx, 0px)), 0) scale(var(--sc, 1))
+      rotate(var(--sr, 0deg));
+  }
+  68% {
+    opacity: 1;
+    transform: translate(
+        calc(-50% + var(--sx, 0px)),
+        calc(var(--sh, -30px) * 0.5)
+      )
+      scale(var(--sc, 1)) rotate(var(--sr, 0deg));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--sx, 0px)), var(--sh, -66px))
+      scale(calc(0.97 * var(--sc, 1))) rotate(var(--sr, 0deg));
+  }
+}
+
+.sec {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  font-size: clamp(12.65px, 1.725vh, 16.1px);
+  color: rgba(255, 255, 255, 0.86);
+  padding: 0.42em 0.95em;
+  border-radius: 999px;
+  background: rgba(10, 9, 8, 0.5);
+  border: 1px solid rgba(232, 212, 173, 0.34);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(246, 231, 196, 0.22);
+  animation: secUp 4.4s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  cursor: default;
+  transition:
+    background 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.28s ease,
+    color 0.22s ease;
+}
+.sec b {
+  font-weight: 800;
+  color: #f6e7c4;
+}
+.sec:hover,
+.sec.held {
+  --sc: 1.13;
+  animation-play-state: paused;
+  z-index: 6;
+  color: #fff;
+  background: rgba(14, 11, 9, 0.82);
+  border-color: #e8d4ad;
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.66),
+    0 0 0 1px rgba(232, 212, 173, 0.5),
+    0 0 34px rgba(232, 212, 173, 0.3),
+    inset 0 1px 0 rgba(246, 231, 196, 0.4);
+}
+.sec:hover b,
+.sec.held b {
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sec {
+    display: none;
+  }
+}
