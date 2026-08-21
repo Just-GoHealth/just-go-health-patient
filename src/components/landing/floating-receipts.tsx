@@ -17,8 +17,12 @@ const SECRETS: [string, string][] = [
   ["@Zara", "sat every paper and passed clean"],
 ];
 
+// horizontal lanes, spaced far enough apart that two pills never touch
+const LANES = [-24, 0, 24];
+
 type Chip = {
   id: number;
+  lane: number;
   name: string;
   text: string;
   sx: number;
@@ -31,49 +35,59 @@ export function FloatingReceipts({ className }: { className?: string }) {
   const [heldIds, setHeldIds] = useState<Set<number>>(new Set());
   const idxRef = useRef(0);
   const nextId = useRef(0);
+  const occupiedLanes = useRef(new Set<number>());
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
     idxRef.current = Math.floor(Math.random() * SECRETS.length);
 
-    function remove(id: number) {
+    function remove(id: number, lane: number) {
       timers.current.delete(id);
+      occupiedLanes.current.delete(lane);
       setChips((prev) => prev.filter((c) => c.id !== id));
     }
 
     function pop() {
+      const freeLanes = LANES.map((_, i) => i).filter(
+        (i) => !occupiedLanes.current.has(i),
+      );
+      if (!freeLanes.length) return; // every lane taken - wait for one to clear
+
+      const lane = freeLanes[Math.floor(Math.random() * freeLanes.length)];
+      occupiedLanes.current.add(lane);
+
       const [name, text] = SECRETS[idxRef.current % SECRETS.length];
       idxRef.current++;
       const id = nextId.current++;
       const chip: Chip = {
         id,
+        lane,
         name,
         text,
-        sx: Math.random() * 420 - 210,
-        sh: -40 - Math.random() * 260,
+        sx: LANES[lane] + (Math.random() * 6 - 3),
+        sh: -(8 + Math.random() * 14),
         sr: Math.random() * 7 - 3.5,
       };
       setChips((prev) => [...prev, chip]);
       timers.current.set(
         id,
-        setTimeout(() => remove(id), 4600),
+        setTimeout(() => remove(id, lane), 4600),
       );
     }
 
-    function burst() {
-      const n = 1 + Math.floor(Math.random() * 3);
-      for (let q = 0; q < n; q++) {
-        setTimeout(pop, q * (90 + Math.random() * 140));
-      }
-    }
-
-    burst();
-    const interval = setInterval(burst, 3000);
+    pop();
+    const interval = setInterval(pop, 2000);
     const activeTimers = timers.current;
+    const activeLanes = occupiedLanes.current;
     return () => {
       clearInterval(interval);
       activeTimers.forEach((t) => clearTimeout(t));
       activeTimers.clear();
+      activeLanes.clear();
+      // a StrictMode dev double-invoke cancels the pending removal timer above
+      // but leaves any chip already added to state - clear it explicitly so it
+      // doesn't linger forever as an orphan once the effect re-runs.
+      setChips([]);
     };
   }, []);
 
@@ -83,7 +97,7 @@ export function FloatingReceipts({ className }: { className?: string }) {
     setHeldIds((prev) => new Set(prev).add(id));
   }
 
-  function release(id: number) {
+  function release(id: number, lane: number) {
     setHeldIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
@@ -93,6 +107,7 @@ export function FloatingReceipts({ className }: { className?: string }) {
       id,
       setTimeout(() => {
         timers.current.delete(id);
+        occupiedLanes.current.delete(lane);
         setChips((prev) => prev.filter((c) => c.id !== id));
       }, 1100),
     );
@@ -109,13 +124,13 @@ export function FloatingReceipts({ className }: { className?: string }) {
           className={`sec pointer-events-auto ${heldIds.has(chip.id) ? "held" : ""}`}
           style={
             {
-              "--sx": `${chip.sx}px`,
+              "--sx": `${chip.sx}vw`,
               "--sh": `${chip.sh}px`,
               "--sr": `${chip.sr}deg`,
             } as React.CSSProperties
           }
           onMouseEnter={() => hold(chip.id)}
-          onMouseLeave={() => release(chip.id)}
+          onMouseLeave={() => release(chip.id, chip.lane)}
         >
           <b>{chip.name}</b> {chip.text}
         </span>

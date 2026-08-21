@@ -74,36 +74,34 @@ export function WelcomeModal({
           >
             {view === "choice" ? (
               <div className="relative flex flex-1 flex-col">
-                <button
-                  type="button"
-                  onClick={() => setView("tiktok")}
-                  className="bg-no absolute flex items-center gap-[0.55em] rounded-full font-bold text-white shadow-[0_10px_26px_rgba(237,75,88,0.35)] transition-transform hover:-translate-y-0.5"
-                  style={{
-                    top: "clamp(16px, 2.4vh, 30px)",
-                    left: "clamp(16px, 2.4vh, 30px)",
-                    fontSize: "clamp(12.65px, 1.725vh, 18.4px)",
-                    padding: "0.72em 1.4em",
-                  }}
-                >
-                  <NoIcon className="size-[1.15em] shrink-0" />
-                  No, I wanna waste time on TikTok
-                </button>
-                <button
-                  type="button"
-                  onClick={onReady}
-                  className="bg-yes absolute flex items-center gap-[0.55em] rounded-full font-bold text-white shadow-[0_10px_26px_rgba(43,182,115,0.38)] transition-transform hover:-translate-y-0.5"
-                  style={{
-                    top: "clamp(16px, 2.4vh, 30px)",
-                    right: "clamp(16px, 2.4vh, 30px)",
-                    fontSize: "clamp(12.65px, 1.725vh, 18.4px)",
-                    padding: "0.72em 1.4em",
-                  }}
-                >
-                  <YesIcon className="size-[1.15em] shrink-0" />
-                  Yes, I&apos;m Ready To Lock In
-                </button>
+                <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setView("tiktok")}
+                    className="bg-no flex items-center gap-[0.55em] rounded-full font-bold text-white shadow-[0_10px_26px_rgba(237,75,88,0.35)] transition-transform hover:-translate-y-0.5"
+                    style={{
+                      fontSize: "clamp(12.65px, 1.725vh, 18.4px)",
+                      padding: "0.72em 1.4em",
+                    }}
+                  >
+                    <NoIcon className="size-[1.15em] shrink-0" />
+                    No, I wanna waste time on TikTok
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onReady}
+                    className="bg-yes flex items-center gap-[0.55em] rounded-full font-bold text-white shadow-[0_10px_26px_rgba(43,182,115,0.38)] transition-transform hover:-translate-y-0.5"
+                    style={{
+                      fontSize: "clamp(12.65px, 1.725vh, 18.4px)",
+                      padding: "0.72em 1.4em",
+                    }}
+                  >
+                    <YesIcon className="size-[1.15em] shrink-0" />
+                    Yes, I&apos;m Ready To Lock In
+                  </button>
+                </div>
 
-                <div className="mx-auto grid w-full max-w-md flex-1 grid-cols-3 items-center gap-2 pt-14 sm:gap-4 sm:pt-16">
+                <div className="mx-auto grid w-full max-w-md flex-1 grid-cols-3 items-center gap-2 pt-6 sm:gap-4 sm:pt-10">
                   {CARDS.map((card) => (
                     <button
                       key={card.id}

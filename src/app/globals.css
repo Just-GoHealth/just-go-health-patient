@@ -105,3 +105,154 @@ body {
     display: none;
   }
 }
+
+/* Pledge, Say Hi and Studios are one size - dotted, gold-tinted pills */
+.land-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  cursor: pointer;
+  border: 1.6px dashed rgba(232, 212, 173, 0.75);
+  background: rgba(232, 212, 173, 0.16);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  border-radius: 999px;
+  padding: 0.6em 1.15em;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  font-size: clamp(13.8px, 1.84vh, 17.25px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.18s ease;
+}
+.land-pill:hover {
+  background: rgba(232, 212, 173, 0.3);
+  border-color: #f6e7c4;
+  transform: translateY(-2px);
+}
+.land-pill svg {
+  width: 1.05em;
+  height: 1.05em;
+  flex: 0 0 auto;
+}
+
+/* Pledge sits over the brightest part of the photo, so it gets a dark
+   fill under the same gold shade instead of the plain gold tint. */
+.land-pledge {
+  background:
+    linear-gradient(rgba(232, 212, 173, 0.2), rgba(232, 212, 173, 0.2)),
+    rgba(10, 10, 12, 0.62);
+}
+.land-pledge:hover {
+  background:
+    linear-gradient(rgba(232, 212, 173, 0.34), rgba(232, 212, 173, 0.34)),
+    rgba(10, 10, 12, 0.72);
+  border-color: #f6e7c4;
+}
+
+/* Providers - a black rectangle in the corner, white on hover */
+.land-providers-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  cursor: pointer;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-size: clamp(13.8px, 1.84vh, 17.25px);
+  padding: 0.62em 1.15em;
+  border-radius: 10px;
+  background: #0b0b0e;
+  color: #e8d4ad;
+  border: 1.8px solid #e8d4ad;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.18s ease;
+}
+.land-providers-btn:hover {
+  background: #fff;
+  color: #0b0b0e;
+  border-color: #f6e7c4;
+  transform: translateY(-2px);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.55);
+}
+.land-providers-btn:active {
+  transform: scale(0.97);
+}
+.land-providers-btn svg {
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1.5);
+}
+.land-providers-btn:hover svg {
+  transform: translate(2px, -2px);
+}
+
+/* LOCK IN - solid gold fill */
+.land-cta-btn {
+  border: 1px solid #f6e7c4;
+  cursor: pointer;
+  font-weight: 800;
+  color: #161207;
+  background: #e8d4ad;
+  letter-spacing: 0.02em;
+  font-size: clamp(14.95px, 2.185vh, 19.55px);
+  padding: 0.7em 1.7em;
+  border-radius: 999px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+}
+.land-cta-btn:hover {
+  background: #f6e7c4;
+  border-color: #fff;
+  color: #0f0c05;
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(232, 212, 173, 0.55);
+}
+
+/* We have [Receipts] - plain text + a solid gold chip, much larger than
+   the dotted pills */
+.land-receipts-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  white-space: nowrap;
+  font-weight: 800;
+  letter-spacing: 0.075em;
+  font-size: clamp(21.965px, 3.036vh, 28.29px);
+  color: #fff;
+}
+.land-receipts-wrap .rc-pre {
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+.land-receipts-wrap .rc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.46em;
+  color: #161207;
+  padding: 0.4em 0.9em;
+  border-radius: 999px;
+  background: #e8d4ad;
+  border: 1px solid #f6e7c4;
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.land-receipts-wrap .rc-ic {
+  width: 1.2em;
+  height: 1.2em;
+  flex: 0 0 auto;
+}

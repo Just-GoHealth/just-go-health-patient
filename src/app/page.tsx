@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { useState } from "react";
 import {
@@ -12,7 +13,7 @@ import {
   StudiosIcon,
 } from "@/components/landing/icons";
 import { FloatingReceipts } from "@/components/landing/floating-receipts";
-import { WelcomeModal } from "@/components/landing/welcome-modal";
+import { PrivacyGateModal } from "@/components/landing/privacy-gate-modal";
 
 const overshoot = { type: "spring" as const, stiffness: 300, damping: 16 };
 
@@ -20,11 +21,12 @@ const HERO_BLUR_DATA_URL =
   "data:image/jpeg;base64,/9j/2wBDABQODxIPDRQSEBIXFRQYHjIhHhwcHj0sLiQySUBMS0dARkVQWnNiUFVtVkVGZIhlbXd7gYKBTmCNl4x9lnN+gXz/2wBDARUXFx4aHjshITt8U0ZTfHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHz/wAARCAALABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAABAIF/8QAIxAAAgICAAUFAAAAAAAAAAAAAQIDEQAEEiExQXETFFGBof/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwBEW5LHqLHOIbZaFPV11u+/i+hw+5vp7n0bRgY2YEPx1y7WPzMeIl96NmJJLPd+MiKV5NynYnhTl8j7wP/Z";
 
 export default function Home() {
+  const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
 
-  function handleReady() {
-    // TODO: route to /onboard once the onboarding flow is built
+  function handleContinue() {
     setModalOpen(false);
+    router.push("/onboard");
   }
 
   return (
@@ -67,17 +69,13 @@ export default function Home() {
           transition={{ ...overshoot, delay: 0.1 }}
         >
           <motion.a
-            href="#"
-            className="text-txt flex items-center gap-[0.5em] rounded-full border border-dashed border-white/30 font-medium transition-colors hover:border-white/50"
-            style={{
-              fontSize: "clamp(12.65px, 1.6vh, 15px)",
-              padding: "0.55em 1.1em",
-            }}
+            href="/pledge"
+            className="land-pill land-pledge"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.28, ease: "easeOut" }}
           >
-            <PledgeIcon className="size-[1.1em] shrink-0" />
+            <PledgeIcon />
             The Pledge
           </motion.a>
 
@@ -93,24 +91,28 @@ export default function Home() {
               height={28}
               priority
               className="invert"
-              style={{ height: "clamp(22px, 3.4vh, 30px)", width: "auto" }}
+              style={{ height: "clamp(26px, 4vh, 36px)", width: "auto" }}
             />
           </motion.div>
 
-          <button
-            type="button"
-            className="text-txt flex items-center gap-[0.4em] rounded-full border border-dashed border-white/30 font-medium transition-colors hover:border-white/50"
-            style={{
-              fontSize: "clamp(12.65px, 1.6vh, 15px)",
-              padding: "0.55em 1.1em",
-            }}
+          <a
+            href="https://dwen-wo-ho-nine.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="land-providers-btn"
           >
             Providers
-            <ProvidersIcon className="size-[1.1em] shrink-0" />
-          </button>
+            <ProvidersIcon />
+          </a>
         </motion.nav>
 
-        <main className="relative flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
+        <main
+          className="relative flex flex-1 flex-col items-center gap-5 px-6 text-center"
+          style={{
+            justifyContent: "flex-start",
+            paddingTop: "clamp(20px, 6vh, 64px)",
+          }}
+        >
           <motion.p
             className="text-gold font-semibold"
             style={{ fontSize: "clamp(13.5px, 1.86vh, 17.5px)" }}
@@ -124,17 +126,15 @@ export default function Home() {
           <motion.button
             type="button"
             onClick={() => setModalOpen(true)}
-            className="border-gold-light bg-gold relative flex items-center gap-[0.5em] overflow-hidden rounded-full border font-semibold text-[#161207] shadow-[0_16px_40px_rgba(232,212,173,0.25)] transition-transform hover:-translate-y-0.5 active:scale-95"
-            style={{
-              fontSize: "clamp(14px, 2vh, 18px)",
-              padding: "0.85em 1.6em",
-            }}
+            className="land-cta-btn relative overflow-hidden"
             initial={{ opacity: 0, y: 12, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ ...overshoot, delay: 0.42 }}
           >
-            <LockIcon className="size-[0.9em] shrink-0" />
-            LOCK IN FOR NSMQ 2026
+            <span className="inline-flex items-center gap-[0.5em]">
+              <LockIcon className="size-[0.9em] shrink-0" />
+              LOCK IN FOR NSMQ 2026
+            </span>
             <motion.span
               aria-hidden
               className="pointer-events-none absolute top-[-40%] left-0 h-[180%] w-[45%]"
@@ -168,7 +168,7 @@ export default function Home() {
           </motion.h1>
 
           <motion.p
-            className="text-yes max-w-2xl font-bold text-balance"
+            className="text-yes max-w-4xl font-bold text-balance"
             style={{ fontSize: "clamp(1.05rem, 2.6vw, 1.5rem)" }}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -179,51 +179,52 @@ export default function Home() {
         </main>
 
         <motion.div
-          className="flex flex-wrap items-center justify-center gap-3 pb-8"
+          className="land-pill absolute z-[3]"
+          style={{
+            left: "clamp(22px, 3.6vw, 48px)",
+            bottom: "clamp(24px, 5vh, 52px)",
+          }}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
         >
-          <div
-            className="text-txt flex items-center gap-[0.45em] rounded-full border border-dashed border-white/30 font-medium"
-            style={{
-              fontSize: "clamp(11px, 1.5vh, 13px)",
-              padding: "0.5em 1em",
-            }}
-          >
-            <HandIcon className="size-[1.1em] shrink-0" />
-            Say Hi
-          </div>
-          <div
-            className="bg-txt relative flex items-center gap-[0.45em] rounded-full font-semibold text-[#161207]"
-            style={{
-              fontSize: "clamp(12.65px, 1.6vh, 15px)",
-              padding: "0.6em 1.2em",
-            }}
-          >
-            <FloatingReceipts className="bottom-[calc(100%+0.6em)] left-1/2" />
-            We have
-            <span className="text-gold inline-flex items-center gap-[0.3em]">
-              <ReceiptIcon className="size-[1.1em] shrink-0" /> Receipts
-            </span>
-          </div>
-          <div
-            className="text-txt flex items-center gap-[0.45em] rounded-full border border-dashed border-white/30 font-medium"
-            style={{
-              fontSize: "clamp(11px, 1.5vh, 13px)",
-              padding: "0.5em 1em",
-            }}
-          >
-            <StudiosIcon className="size-[1.1em] shrink-0" />
-            JustGo Health Studios
-          </div>
+          <HandIcon />
+          Say Hi
+        </motion.div>
+
+        <motion.div
+          className="land-receipts-wrap absolute left-1/2 z-[3] -translate-x-1/2"
+          style={{ bottom: "clamp(24px, 5vh, 52px)" }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.75, ease: "easeOut" }}
+        >
+          <FloatingReceipts className="bottom-[calc(100%+0.6em)] left-1/2" />
+          <span className="rc-pre">We have</span>
+          <span className="rc-chip">
+            <ReceiptIcon className="rc-ic" /> Receipts
+          </span>
+        </motion.div>
+
+        <motion.div
+          className="land-pill absolute z-[3]"
+          style={{
+            right: "clamp(22px, 3.6vw, 48px)",
+            bottom: "clamp(24px, 5vh, 52px)",
+          }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
+        >
+          <StudiosIcon />
+          JustGo Health Studios
         </motion.div>
       </div>
 
-      <WelcomeModal
+      <PrivacyGateModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onReady={handleReady}
+        onContinue={handleContinue}
       />
     </div>
   );
