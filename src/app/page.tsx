@@ -1,254 +1,223 @@
 "use client";
 
+import Image from "next/image";
+import { motion } from "motion/react";
 import { useState } from "react";
 import {
-  Briefcase,
-  GraduationCap,
-  Hand,
-  Heart,
-  HeartHandshake,
-  Lock,
-  Radio,
-  Receipt,
-  ShieldCheck,
-  Smartphone,
-  ArrowUpRight,
-  X,
-} from "lucide-react";
+  HandIcon,
+  LockIcon,
+  PledgeIcon,
+  ProvidersIcon,
+  ReceiptIcon,
+  StudiosIcon,
+} from "@/components/landing/icons";
+import { WelcomeModal } from "@/components/landing/welcome-modal";
 
-type CardId = "whatsup" | "mental" | "actions";
+const overshoot = { type: "spring" as const, stiffness: 300, damping: 16 };
 
-const CARDS: { id: CardId; label: string; msg: string }[] = [
-  {
-    id: "whatsup",
-    label: "What's Up?",
-    msg: "Everything you dealing with right now, from Exams to Assignments to Dating to Family and Roommates Drama. Every little thing matters when it comes to you.",
-  },
-  {
-    id: "mental",
-    label: "Your Mental Health",
-    msg: "How you're really doing underneath it all, your mood, stress, sleep and energy. We read your true state, no judgment, so nothing about you gets missed.",
-  },
-  {
-    id: "actions",
-    label: "Actions & Radio",
-    msg: "The move. Once your battery is set, we build the plan, the exact steps to take, paired with the right sound to carry you all the way through.",
-  },
+const HERO_BLUR_DATA_URL =
+  "data:image/jpeg;base64,/9j/2wBDABQODxIPDRQSEBIXFRQYHjIhHhwcHj0sLiQySUBMS0dARkVQWnNiUFVtVkVGZIhlbXd7gYKBTmCNl4x9lnN+gXz/2wBDARUXFx4aHjshITt8U0ZTfHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHz/wAARCAALABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAABAIF/8QAIxAAAgICAAUFAAAAAAAAAAAAAQIDEQAEEiExQXETFFGBof/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwBEW5LHqLHOIbZaFPV11u+/i+hw+5vp7n0bRgY2YEPx1y7WPzMeIl96NmJJLPd+MiKV5NynYnhTl8j7wP/Z";
+
+const FLOATING_RECEIPTS = [
+  { text: "@Naledi held a 4.0 through 1L", left: "8%", bottom: "30%", delay: 0 },
+  { text: "@Yaw got the Apple internship", left: "30%", bottom: "16%", delay: 1.3 },
+  { text: "@Priya clerked the Second Circuit", left: "56%", bottom: "16%", delay: 2.6 },
 ];
-
-const DEFAULT_SUB =
-  "Set your battery with What's Up + Your Mental Health, then we cook up the exact game plan for you (Actions). No fluff, just moves. 🚀";
 
 export default function Home() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [view, setView] = useState<"choice" | "tiktok">("choice");
-  const [activeCard, setActiveCard] = useState<CardId | null>(null);
-
-  function openModal() {
-    setView("choice");
-    setActiveCard(null);
-    setModalOpen(true);
-  }
 
   function handleReady() {
     // TODO: route to /onboard once the onboarding flow is built
     setModalOpen(false);
   }
 
-  const active = CARDS.find((c) => c.id === activeCard);
-
   return (
-    <div className="bg-ink relative flex min-h-screen flex-1 flex-col overflow-hidden">
-      <div
+    <div className="relative flex min-h-screen flex-1 flex-col overflow-hidden bg-ink">
+      <motion.div
+        className="absolute inset-0"
+        style={{ transformOrigin: "38% 52%" }}
+        initial={{ scale: 1.12 }}
+        animate={{ scale: 1 }}
+        transition={{ duration: 11, ease: [0.16, 0.84, 0.34, 1] }}
+      >
+        <Image
+          src="/images/nsmqbg.webp"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          placeholder="blur"
+          blurDataURL={HERO_BLUR_DATA_URL}
+          className="object-cover grayscale"
+        />
+      </motion.div>
+      <motion.div
         aria-hidden
-        className="pointer-events-none absolute inset-0"
+        className="absolute inset-0"
         style={{
           backgroundImage:
-            "radial-gradient(60% 50% at 50% 0%, rgba(149,90,164,0.25), transparent 70%), radial-gradient(55% 45% at 85% 100%, rgba(232,212,173,0.16), transparent 70%), linear-gradient(180deg, rgba(0,0,0,0.55), rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.65))",
+            "linear-gradient(180deg, rgba(12,9,7,0.58) 0%, rgba(12,9,7,0.30) 30%, rgba(12,9,7,0.30) 62%, rgba(12,9,7,0.66) 100%)",
         }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1.2, ease: "easeOut" }}
       />
 
       <div className="relative z-10 flex flex-1 flex-col">
-        <nav className="flex items-center justify-between gap-4 p-6 sm:px-10">
-          <a
+        <motion.nav
+          className="flex items-center justify-between gap-4 p-6 sm:px-10"
+          initial={{ opacity: 0, y: -16, scale: 0.94 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ ...overshoot, delay: 0.1 }}
+        >
+          <motion.a
             href="#"
-            className="text-muted hover:text-txt flex items-center gap-2 text-sm font-medium transition-colors"
+            className="flex items-center gap-2 rounded-full border border-dashed border-white/30 px-4 py-2 text-sm font-medium text-txt transition-colors hover:border-white/50"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.28, ease: "easeOut" }}
           >
-            <HeartHandshake className="size-4" />
+            <PledgeIcon className="size-4" />
             The Pledge
-          </a>
-          <div className="text-lg font-bold tracking-tight">
-            JustGo <span className="text-gold">Health</span>
-          </div>
+          </motion.a>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...overshoot, delay: 0.2 }}
+          >
+            <Image
+              src="/images/logo.webp"
+              alt="JustGo Health"
+              width={140}
+              height={28}
+              priority
+              className="h-6 w-auto invert sm:h-7"
+            />
+          </motion.div>
+
           <button
             type="button"
-            className="text-muted hover:text-txt flex items-center gap-1 text-sm font-medium transition-colors"
+            className="flex items-center gap-1 rounded-full border border-dashed border-white/30 px-4 py-2 text-sm font-medium text-txt transition-colors hover:border-white/50"
           >
             Providers
-            <ArrowUpRight className="size-4" />
+            <ProvidersIcon className="size-4" />
           </button>
-        </nav>
+        </motion.nav>
 
-        <main className="flex flex-1 flex-col items-center justify-center gap-8 px-6 text-center">
-          <button
-            type="button"
-            onClick={openModal}
-            className="border-gold-light bg-gold hover:bg-gold-light flex items-center gap-2 rounded-full border px-6 py-3 font-semibold text-[#161207] shadow-[0_16px_40px_rgba(232,212,173,0.25)] transition-all hover:-translate-y-0.5 active:scale-95"
+        <main className="relative flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
+          {FLOATING_RECEIPTS.map((r) => (
+            <motion.div
+              key={r.text}
+              aria-hidden
+              className="absolute rounded-full bg-black/40 px-3 py-1.5 text-xs font-medium text-txt/80 backdrop-blur-sm"
+              style={{ left: r.left, bottom: r.bottom }}
+              initial={{ opacity: 0, y: 0 }}
+              animate={{ opacity: [0, 1, 1, 0], y: [0, -10, -44, -64] }}
+              transition={{
+                duration: 4,
+                times: [0, 0.15, 0.75, 1],
+                repeat: Infinity,
+                repeatDelay: 2,
+                delay: r.delay,
+                ease: "easeOut",
+              }}
+            >
+              <span className="font-semibold">{r.text.split(" ")[0]}</span>{" "}
+              {r.text.slice(r.text.indexOf(" ") + 1)}
+            </motion.div>
+          ))}
+
+          <motion.p
+            className="text-sm font-semibold text-gold sm:text-base"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.3, ease: "easeOut" }}
           >
-            <Lock className="size-4" />
-            LOCK IN
-          </button>
+            Designed with clinical experts and NSMQ alumni.
+          </motion.p>
 
-          <h1 className="max-w-2xl text-4xl font-extrabold tracking-tight text-balance sm:text-5xl">
-            <span className="text-gold">The Best, Ever,</span>{" "}
-            <span className="text-brand-purple">Version of Yourself.</span>
-          </h1>
-
-          <p className="text-muted flex max-w-xl flex-wrap items-center justify-center gap-x-2 gap-y-2 text-base sm:text-lg">
-            <span>From</span>
-            <span className="text-txt inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1">
-              <Heart className="size-3.5" /> Dating
-            </span>
-            <span>to</span>
-            <span className="text-txt inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1">
-              <GraduationCap className="size-3.5" /> All A&apos;s in Exam
-            </span>
-            <span>to</span>
-            <span className="text-txt inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-1">
-              <Briefcase className="size-3.5" /> Internship
-            </span>
-            <span>at Apple Inc.</span>
-          </p>
-
-          <button
+          <motion.button
             type="button"
-            className="border-line text-txt flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-medium transition-colors hover:border-white/25 hover:bg-white/5"
+            onClick={() => setModalOpen(true)}
+            className="relative flex items-center gap-2 overflow-hidden rounded-full border border-gold-light bg-gold px-6 py-3 font-semibold text-[#161207] shadow-[0_16px_40px_rgba(232,212,173,0.25)] transition-transform hover:-translate-y-0.5 active:scale-95"
+            initial={{ opacity: 0, y: 12, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...overshoot, delay: 0.42 }}
           >
-            <Hand className="size-4" />
-            Say Hi
-          </button>
+            <LockIcon className="size-4" />
+            LOCK IN FOR NSMQ 2026
+            <motion.span
+              aria-hidden
+              className="pointer-events-none absolute top-[-40%] left-0 h-[180%] w-[45%]"
+              style={{
+                backgroundImage:
+                  "linear-gradient(100deg, rgba(255,255,255,0), rgba(255,255,255,0.85), rgba(255,255,255,0))",
+              }}
+              initial={{ opacity: 0, x: "-40%" }}
+              animate={{
+                opacity: [0, 0.55, 0, 0],
+                x: ["-40%", "32%", "140%", "140%"],
+              }}
+              transition={{
+                duration: 2.6,
+                delay: 2.1,
+                ease: "easeOut",
+                times: [0, 0.18, 0.45, 1],
+              }}
+            />
+          </motion.button>
+
+          <motion.h1
+            className="text-5xl font-extrabold tracking-tight sm:text-6xl"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.5, ease: "easeOut" }}
+          >
+            <span className="text-txt">NSMQ</span>{" "}
+            <span className="text-gold">2026</span>
+          </motion.h1>
+
+          <motion.p
+            className="max-w-2xl text-xl font-bold text-yes text-balance sm:text-2xl"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.6, ease: "easeOut" }}
+          >
+            Compete at your best while taking care of your mind along the
+            way.
+          </motion.p>
         </main>
 
-        <div className="flex flex-wrap items-center justify-center gap-3 pb-8">
-          <button
-            type="button"
-            className="border-line text-muted hover:text-txt flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium transition-colors"
-          >
+        <motion.div
+          className="flex flex-wrap items-center justify-center gap-3 pb-8"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
+        >
+          <div className="flex items-center gap-2 rounded-full border border-dashed border-white/30 px-4 py-2 text-xs font-medium text-txt">
+            <HandIcon className="size-4" />
+            Say Hi
+          </div>
+          <div className="flex items-center gap-2 rounded-full bg-txt px-5 py-2.5 text-sm font-semibold text-[#161207]">
             We have
-            <span className="text-txt inline-flex items-center gap-1">
-              <Receipt className="size-3.5" /> Receipts
+            <span className="inline-flex items-center gap-1 text-gold">
+              <ReceiptIcon className="size-4" /> Receipts
             </span>
-          </button>
-          <button
-            type="button"
-            className="border-line text-muted hover:text-txt flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-medium transition-colors"
-          >
-            <Radio className="size-3.5" />
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-dashed border-white/30 px-4 py-2 text-xs font-medium text-txt">
+            <StudiosIcon className="size-3.5" />
             JustGo Health Studios
-          </button>
-        </div>
+          </div>
+        </motion.div>
       </div>
 
-      {modalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="border-line bg-panel relative w-full max-w-lg overflow-hidden rounded-3xl border shadow-2xl">
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              aria-label="Close"
-              className="text-muted hover:text-txt absolute top-4 right-4 z-10 transition-colors"
-            >
-              <X className="size-5" />
-            </button>
-
-            {view === "choice" ? (
-              <div className="flex flex-col">
-                <div className="divide-line grid grid-cols-2 divide-x">
-                  <button
-                    type="button"
-                    onClick={() => setView("tiktok")}
-                    className="text-muted hover:text-txt flex flex-col items-center gap-3 px-4 py-8 text-sm font-medium transition-colors hover:bg-white/5"
-                  >
-                    <Smartphone className="text-no size-6" />
-                    No, I wanna waste time on TikTok
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleReady}
-                    className="text-txt flex flex-col items-center gap-3 px-4 py-8 text-sm font-semibold transition-colors hover:bg-white/5"
-                  >
-                    <ShieldCheck className="text-yes size-6" />
-                    Yes, I&apos;m Ready To Lock In
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 px-6 pt-6">
-                  {CARDS.map((card) => (
-                    <button
-                      key={card.id}
-                      type="button"
-                      onMouseEnter={() => setActiveCard(card.id)}
-                      onMouseLeave={() => setActiveCard(null)}
-                      onFocus={() => setActiveCard(card.id)}
-                      onBlur={() => setActiveCard(null)}
-                      className="hover:border-gold/50 border-line text-txt rounded-xl border px-3 py-4 text-xs font-medium transition-colors hover:bg-white/5"
-                    >
-                      {card.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="px-6 pt-5 pb-6 text-center">
-                  <div className="text-txt text-sm font-semibold">
-                    Welcome to LOCK IN 2.0
-                  </div>
-                  <div className="text-muted mt-1.5 text-xs leading-relaxed">
-                    {active ? (
-                      <>
-                        <span className="text-gold font-semibold">
-                          {active.label}:{" "}
-                        </span>
-                        {active.msg}
-                      </>
-                    ) : (
-                      DEFAULT_SUB
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-4 px-8 py-12 text-center">
-                <div className="text-txt text-xl font-bold">No Worries.</div>
-                <p className="text-muted max-w-xs text-sm">
-                  Go ahead, enjoy the scroll. We&apos;ll be right here whenever
-                  you&apos;re ready to lock in.
-                </p>
-                <div className="mt-2 flex flex-col gap-3 sm:flex-row">
-                  <a
-                    href="https://www.tiktok.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-txt flex items-center justify-center gap-2 rounded-full bg-white/10 px-5 py-2.5 text-sm font-medium transition-colors hover:bg-white/15"
-                  >
-                    Open TikTok
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setView("choice")}
-                    className="border-line text-muted hover:text-txt rounded-full border px-5 py-2.5 text-sm font-medium transition-colors"
-                  >
-                    Actually, let&apos;s lock in
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <WelcomeModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onReady={handleReady}
+      />
     </div>
   );
 }
