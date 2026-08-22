@@ -154,6 +154,20 @@ body {
   border-color: #f6e7c4;
 }
 
+/* the campus-card "when" pill's dot, while its school is live today -
+   ported 1:1 from the legacy .sc-when.st-today .dot / @keyframes scLive */
+@keyframes campus-live {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+}
+
 /* Providers - a black rectangle in the corner, white on hover */
 .land-providers-btn {
   display: inline-flex;

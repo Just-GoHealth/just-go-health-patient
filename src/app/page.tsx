@@ -14,6 +14,9 @@ import {
 } from "@/components/landing/icons";
 import { FloatingReceipts } from "@/components/landing/floating-receipts";
 import { PrivacyGateModal } from "@/components/landing/privacy-gate-modal";
+import { ApiError, getVersionMembership } from "@/lib/api";
+
+const VERSION_CODE = "nsmq2026";
 
 const overshoot = { type: "spring" as const, stiffness: 300, damping: 16 };
 
@@ -23,10 +26,31 @@ const HERO_BLUR_DATA_URL =
 export default function Home() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(false);
 
   function handleContinue() {
     setModalOpen(false);
     router.push("/onboard");
+  }
+
+  // returning users with a session already shouldn't see the marketing
+  // privacy gate at all — /onboard's own session-check routes them straight
+  // to wherever they left off (campus picking, the code gate, or in). Only a
+  // genuinely unauthenticated 401/403 means this is a first-time visitor.
+  async function handleLockInClick() {
+    setCheckingSession(true);
+    try {
+      await getVersionMembership(VERSION_CODE);
+      router.push("/onboard");
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        setModalOpen(true);
+      } else {
+        router.push("/onboard");
+      }
+    } finally {
+      setCheckingSession(false);
+    }
   }
 
   return (
@@ -125,15 +149,16 @@ export default function Home() {
 
           <motion.button
             type="button"
-            onClick={() => setModalOpen(true)}
-            className="land-cta-btn relative overflow-hidden"
+            onClick={handleLockInClick}
+            disabled={checkingSession}
+            className="land-cta-btn relative overflow-hidden disabled:opacity-70"
             initial={{ opacity: 0, y: 12, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ ...overshoot, delay: 0.42 }}
           >
             <span className="inline-flex items-center gap-[0.5em]">
               <LockIcon className="size-[0.9em] shrink-0" />
-              LOCK IN FOR NSMQ 2026
+              {checkingSession ? "One sec…" : "LOCK IN FOR NSMQ 2026"}
             </span>
             <motion.span
               aria-hidden

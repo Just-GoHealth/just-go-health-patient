@@ -1,0 +1,732 @@
+/* Ported verbatim (class names, colors, sizing) from the legacy
+   #screenMental battery UI — the What's Up mental-health check. */
+
+.wu-shell {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  overflow: hidden;
+  background: #0a0a0c;
+}
+
+.mh-screen {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-ink);
+  color: var(--color-txt);
+  overflow: hidden;
+}
+
+/* ---- left profile panel ---- */
+/* the dark linear-gradient is only for legibility over a real photo — it's
+   applied inline (LeftPanel component) when profile.photoUrl is set. This
+   base rule is the no-photo fallback and must NOT stack that overlay, or it
+   crushes the warm gradient to near-black with nothing to overlay it on */
+.wu-left {
+  width: 40%;
+  flex: 0 0 40%;
+  position: relative;
+  color: #fff;
+  overflow: hidden;
+  background: radial-gradient(120% 160% at 50% 0%, #43302a 0%, #2b1f1c 55%, #1a1412 100%);
+  background-size: cover;
+  background-position: center top;
+  border-right: 2px solid var(--color-gold);
+}
+@media (max-width: 900px) {
+  .wu-left {
+    display: none;
+  }
+}
+
+.ps-name {
+  position: absolute;
+  top: 8%;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  font-size: clamp(29.7px, 3.86vw, 54px);
+  color: var(--color-gold);
+  text-shadow:
+    0 0 8px rgba(255, 255, 255, 0.4),
+    0 0 18px rgba(232, 212, 173, 0.6);
+}
+
+.ps-batt-wrap {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.ps-batt {
+  animation: battGlow 2.6s ease-in-out infinite;
+}
+@keyframes battGlow {
+  0%,
+  100% {
+    filter: drop-shadow(0 6px 18px rgba(43, 182, 115, 0.35));
+  }
+  50% {
+    filter: drop-shadow(0 6px 26px rgba(43, 182, 115, 0.7));
+  }
+}
+.ps-batt-pct {
+  font-family: "Space Mono", monospace, var(--font);
+  font-weight: 800;
+  font-size: clamp(29.9px, 3.91vh, 39.1px);
+  color: #fff;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+  line-height: 1;
+}
+.ps-batt-label {
+  font-weight: 800;
+  font-size: 14.95px;
+  letter-spacing: 0.14em;
+  color: var(--color-gold);
+  text-transform: uppercase;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+.ps-batt-delta {
+  position: absolute;
+  top: -28px;
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--color-yes);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+  animation: battDeltaRise 1.1s ease forwards;
+  pointer-events: none;
+}
+@keyframes battDeltaRise {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+}
+
+.ps-school {
+  position: absolute;
+  right: clamp(14px, 1.6vw, 26px);
+  bottom: clamp(14px, 2.2vh, 26px);
+  z-index: 2;
+  text-align: center;
+}
+.ps-logo {
+  width: clamp(60px, 8vh, 88px);
+  height: clamp(60px, 8vh, 88px);
+  border-radius: 50%;
+  margin: 0 auto;
+  background: linear-gradient(160deg, #a41d2b, #7a0f1a);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+.ps-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ps-school .s-name {
+  margin-top: 9px;
+  font-weight: 800;
+  font-size: clamp(14px, 1.9vh, 18px);
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+  max-width: 220px;
+}
+
+/* ---- log out (bottom-left of the left panel) ---- */
+.nsmq-out {
+  position: absolute;
+  /* extra clearance from the corner — Edge injects its own Sidebar/Copilot
+     icon into the page's bottom-left corner (outside this page's DOM, so
+     it can't be pushed aside with z-index), and it lands right here */
+  left: clamp(48px, 5vw, 64px);
+  bottom: clamp(20px, 2.6vh, 30px);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: clamp(11px, 1.42vh, 13.5px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.62em 1.1em;
+  border-radius: 999px;
+  background: rgba(12, 9, 8, 0.52);
+  color: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34);
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1.4);
+}
+.nsmq-out svg {
+  width: 1.05em;
+  height: 1.05em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nsmq-out:hover {
+  background: rgba(237, 75, 88, 0.9);
+  border-color: #ed4b58;
+  color: #fff;
+  transform: translateY(-2px);
+}
+.nsmq-out:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* ---- loading ---- */
+.mh-loading {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  animation: overlayIn 0.4s ease both;
+}
+.mh-load-batt {
+  filter: drop-shadow(0 6px 22px rgba(43, 182, 115, 0.6));
+}
+.mh-load-fill {
+  animation: battFillPulse 1.1s ease-in-out infinite;
+}
+@keyframes battFillPulse {
+  0% {
+    width: 20px;
+    fill: var(--color-no);
+  }
+  50% {
+    width: 111px;
+    fill: var(--color-yes);
+  }
+  100% {
+    width: 20px;
+    fill: var(--color-no);
+  }
+}
+.mh-load-title {
+  font-weight: 800;
+  font-size: clamp(29.9px, 4.6vh, 46px);
+  letter-spacing: -0.5px;
+}
+.mh-load-sub {
+  color: var(--color-gold);
+  font-weight: 600;
+  font-size: clamp(16.1px, 2.3vh, 21.85px);
+}
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- focus card ---- */
+.mh-focus {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(14px, 2.6vh, 30px);
+  padding: clamp(20px, 3vh, 44px);
+  padding-top: clamp(58px, 8.5vh, 96px);
+  text-align: center;
+}
+.f-kick {
+  position: absolute;
+  top: clamp(12px, 2vh, 26px);
+  left: clamp(20px, 3vh, 44px);
+  margin: 0;
+  z-index: 6;
+  color: var(--color-gold);
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  font-size: clamp(12.65px, 1.725vh, 16.1px);
+}
+.f-sec {
+  display: inline-block;
+  border: 1.5px dashed rgba(232, 212, 173, 0.6);
+  border-radius: 999px;
+  padding: 0.4em 1em;
+  letter-spacing: 1.1px;
+  color: #fff;
+  white-space: nowrap;
+}
+.f-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  white-space: nowrap;
+  max-width: 96%;
+  font-weight: 800;
+  letter-spacing: -0.6px;
+  line-height: 1;
+  font-size: clamp(29.9px, 5.98vh, 59.8px);
+  animation: subPop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes subPop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.f-title .huh-btn {
+  margin-left: 0;
+  flex: 0 0 auto;
+  font-size: 0.34em;
+}
+.f-q {
+  min-height: 4.6em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(19.55px, 3.105vh, 28.75px);
+  font-weight: 600;
+  color: rgba(244, 242, 239, 0.85);
+  max-width: 52ch;
+  border: 1.5px dashed transparent;
+  border-radius: 16px;
+  padding: 0.6em 1em;
+  transition:
+    border-color 0.3s ease,
+    background 0.3s ease;
+}
+.f-q.is-huh {
+  color: var(--color-gold);
+  border-color: rgba(232, 212, 173, 0.55);
+  background: rgba(232, 212, 173, 0.06);
+}
+.f-q.qflip {
+  animation: qFlip 0.45s cubic-bezier(0.3, 0.85, 0.3, 1);
+}
+@keyframes qFlip {
+  from {
+    opacity: 0;
+    transform: rotateX(75deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- HUH? / OKAY toggle ---- */
+.huh-btn {
+  margin-left: 0.5em;
+  vertical-align: middle;
+  cursor: pointer;
+  border: 1.5px solid rgba(232, 212, 173, 0.6);
+  background: rgba(232, 212, 173, 0.1);
+  color: var(--color-gold);
+  font-weight: 800;
+  font-size: 0.32em;
+  letter-spacing: 0.1em;
+  padding: 0.5em 1.1em;
+  border-radius: 999px;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+  animation: huhWiggle 3.4s ease-in-out infinite;
+}
+.huh-btn:hover {
+  background: var(--color-gold);
+  color: #1c1710;
+  transform: rotate(-3deg) scale(1.1);
+}
+.huh-btn.okay {
+  border-color: rgba(43, 182, 115, 0.7);
+  background: rgba(43, 182, 115, 0.14);
+  color: var(--color-yes);
+  animation: none;
+}
+.huh-btn.okay:hover {
+  background: var(--color-yes);
+  color: #fff;
+}
+@keyframes huhWiggle {
+  0%,
+  90%,
+  100% {
+    transform: rotate(0);
+  }
+  92% {
+    transform: rotate(-4deg);
+  }
+  95% {
+    transform: rotate(4deg);
+  }
+  98% {
+    transform: rotate(-2deg);
+  }
+}
+
+/* ---- the tooltip on hover/focus of an option ---- */
+.mh-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 80;
+  transform: translate(-50%, -100%) translateY(6px);
+  width: max-content;
+  max-width: min(300px, 62vw);
+  padding: 0.7em 0.95em;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #6b332c 0%, #4a2019 62%, #37170f 100%);
+  border: 1.5px solid rgba(232, 212, 173, 0.55);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.58),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color: var(--color-txt);
+  font-weight: 500;
+  font-size: clamp(12.65px, 1.61vh, 15.5px);
+  line-height: 1.38;
+  text-align: center;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.mh-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: var(--tipx, 50%);
+  transform: translate(-50%, -55%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: #37170f;
+  border-right: 1.5px solid rgba(232, 212, 173, 0.55);
+  border-bottom: 1.5px solid rgba(232, 212, 173, 0.55);
+  border-bottom-right-radius: 3px;
+}
+.mh-tip.on {
+  opacity: 1;
+  transform: translate(-50%, -100%) translateY(-2px);
+}
+
+/* ---- answer options ---- */
+.mh-opts {
+  display: flex;
+  gap: clamp(9px, 1.5vh, 16px);
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+.mh-opt {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55em;
+  cursor: pointer;
+  border: 1.5px solid var(--color-line);
+  background: #191920;
+  color: var(--color-txt);
+  font-weight: 700;
+  font-size: clamp(14.95px, 2.07vh, 19.55px);
+  padding: 0.65em 1.15em;
+  border-radius: 999px;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+  animation: tileIn 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+.mh-opt:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.mh-opt:nth-child(2) {
+  animation-delay: 0.07s;
+}
+.mh-opt:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.mh-opt:nth-child(4) {
+  animation-delay: 0.17s;
+}
+@keyframes tileIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.mh-opt:hover {
+  transform: translateY(-3px);
+  border-color: var(--color-gold);
+  background: rgba(232, 212, 173, 0.14);
+}
+.mh-opt:active {
+  transform: scale(0.94) !important;
+}
+.mh-opt.sel {
+  border-color: var(--color-gold);
+  background: rgba(232, 212, 173, 0.2);
+  color: var(--color-gold);
+}
+.mh-opt .em {
+  font-size: 1.5em;
+  line-height: 1;
+}
+.mh-opt:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* ---- flying emoji on answer ---- */
+.fly-emoji {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  font-size: 39.1px;
+  transition:
+    transform 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.55s ease;
+}
+
+/* ---- bottom bar: progress strip ---- */
+.mh-bar {
+  flex: 0 0 30%;
+  border-top: 1.5px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(12px, 2vh, 20px);
+  padding: clamp(16px, 2.6vh, 30px) clamp(24px, 4vh, 52px);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(10, 10, 12, 0));
+  min-width: 0;
+}
+.mh-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.mh-bar-title {
+  font-weight: 800;
+  font-size: clamp(25.3px, 4.14vh, 46px);
+  letter-spacing: -0.5px;
+}
+.mh-tracker {
+  width: clamp(48px, 6.4vh, 64px);
+  height: clamp(48px, 6.4vh, 64px);
+  border-radius: 50%;
+  border: 2px solid var(--color-gold);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1px;
+  font-weight: 800;
+  color: var(--color-gold);
+  flex: 0 0 auto;
+}
+.mh-tracker span {
+  font-size: clamp(20.7px, 2.99vh, 29.9px);
+  line-height: 1;
+}
+.mh-tracker small {
+  font-size: clamp(12.65px, 1.725vh, 17.25px);
+  color: rgba(232, 212, 173, 0.6);
+  font-weight: 700;
+}
+.mh-strip {
+  display: flex;
+  gap: clamp(14px, 2.2vh, 26px);
+  overflow-x: auto;
+  padding-bottom: 6px;
+  min-width: 0;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(232, 212, 173, 0.5) transparent;
+}
+.mh-item {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: clamp(64px, 8vw, 88px);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+.mh-item:disabled {
+  cursor: default;
+}
+.mh-item:hover .ring {
+  border-color: var(--color-gold);
+  transform: translateY(-2px);
+}
+.mh-item .ring {
+  width: clamp(52px, 7vh, 68px);
+  height: clamp(52px, 7vh, 68px);
+  border-radius: 50%;
+  border: 2.5px solid var(--color-gold);
+  background: #111116;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(25.3px, 3.45vh, 34.5px);
+  transition: all 0.3s ease;
+}
+.mh-item .nm {
+  font-weight: 700;
+  font-size: clamp(11.5px, 1.552vh, 14.95px);
+  color: var(--color-muted);
+  text-align: center;
+  line-height: 1.15;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mh-item.done .ring {
+  border-color: var(--color-yes);
+  background: linear-gradient(160deg, rgba(43, 182, 115, 0.28), rgba(43, 182, 115, 0.08));
+}
+.mh-item.done .nm {
+  color: var(--color-gold);
+}
+.mh-item.active .ring {
+  background: #fff !important;
+  border-color: #fff !important;
+  color: #161207 !important;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.26);
+  transform: scale(1.08);
+}
+.mh-item.active .nm {
+  color: #fff;
+  font-weight: 800;
+}
+.mh-item.pending .ring {
+  border-color: rgba(232, 212, 173, 0.55);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ---- the result board ---- */
+/* Ported from the legacy "dome" component (#screenMandy) — half-moon glass
+   cards, one per section, with the item-level breakdown as rows beneath.
+   The original scatters these on a canvas at per-item coordinates; here
+   they sit in a simple responsive row instead, since a results report
+   wants everything visible at once rather than explored one at a time. */
+.board-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: radial-gradient(140% 100% at 50% -10%, #241a14 0%, var(--color-ink) 55%);
+  color: var(--color-txt);
+  padding: clamp(28px, 5vh, 56px) clamp(16px, 4vw, 40px);
+}
+.board-head {
+  text-align: center;
+  max-width: 640px;
+  margin: 0 auto clamp(28px, 4vh, 44px);
+}
+.board-eyebrow {
+  color: var(--color-gold);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-size: clamp(11px, 1.3vw, 13px);
+}
+.board-title {
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  font-size: clamp(1.5rem, 3.4vw, 2.25rem);
+  margin-top: 6px;
+}
+
+/* the dome tiles themselves are Tailwind + inline styles now (see
+   components/screening/dome-tile.tsx, ported from dwen-wo-ho's provider
+   assessment board) — this is just the row-reveal animation for the
+   expanded item list, standing in for the tailwindcss-animate utility
+   classes that component uses, which aren't installed in this project */
+@keyframes domeRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.dome-row-in {
+  animation: domeRowIn 0.3s ease-out both;
+}
+
+.board-care-btn {
+  margin-top: clamp(10px, 1.4vh, 16px);
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  padding: 0.85em 1em;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: #ed4b58;
+  color: #fff;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease;
+}
+.board-care-btn:hover {
+  background: #ff5f6c;
+  transform: translateY(-2px);
+}
+.board-care-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+  transform: none;
+}
+
+.board-continue-btn {
+  display: block;
+  margin: clamp(32px, 5vh, 48px) auto 0;
+}

@@ -17,6 +17,7 @@ export function CustomSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -28,14 +29,29 @@ export function CustomSelect({
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
+  // land on the selected option if there is one; otherwise open somewhere
+  // near the middle of the list instead of the very top. This list is used
+  // for birth year among other things, and nobody filling this out today
+  // was born in the years sitting at the top of that list.
+  useEffect(() => {
+    if (!open) return;
+    const list = listRef.current;
+    if (!list) return;
+    const selectedIndex = value ? options.indexOf(value) : -1;
+    const targetIndex =
+      selectedIndex >= 0 ? selectedIndex : Math.floor(options.length / 2);
+    const target = list.children[targetIndex] as HTMLElement | undefined;
+    target?.scrollIntoView({ block: "center" });
+  }, [open, value, options]);
+
   return (
-    <div ref={ref} className={`relative ${className ?? ""}`}>
+    <div ref={ref} className={`relative min-w-0 ${className ?? ""}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="border-line focus:border-gold/60 flex w-full items-center justify-between rounded-xl border bg-white/5 px-4 py-3 text-left text-base outline-none"
       >
-        <span className={value ? "text-txt" : "text-muted"}>
+        <span className={`min-w-0 truncate ${value ? "text-txt" : "text-muted"}`}>
           {value || placeholder}
         </span>
         <svg
@@ -54,7 +70,10 @@ export function CustomSelect({
       </button>
 
       {open && (
-        <div className="border-line absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border bg-[#2b1210] shadow-2xl">
+        <div
+          ref={listRef}
+          className="border-line absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border bg-[#2b1210] shadow-2xl"
+        >
           {options.map((opt) => (
             <button
               key={opt}

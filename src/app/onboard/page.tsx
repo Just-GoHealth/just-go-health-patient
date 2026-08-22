@@ -2,14 +2,26 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import "./onboard.css";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { CodeGateModal } from "@/components/onboard/code-gate-modal";
 import { CustomSelect } from "@/components/onboard/custom-select";
 import { PhotoTestimonialPanel } from "@/components/onboard/photo-testimonial-panel";
 import {
   ApiError,
+  JOIN_ERROR_COPY,
   type CampusPickerItem,
   type ContactType,
+  activateEnrollment,
   checkContact,
   getLockinVersion,
   getVersionCampuses,
@@ -19,6 +31,8 @@ import {
   sendOtp,
   signin,
   signup,
+  skipProfilePhoto,
+  uploadProfilePhoto,
   verifyOtp,
 } from "@/lib/api";
 
@@ -30,10 +44,48 @@ type Step =
   | "email"
   | "signup"
   | "verify"
+  | "photo"
   | "signin"
   | "campus"
   | "code"
   | "done";
+
+// dev-only shortcut so later steps (photo, campus, code) can be reviewed
+// without a real OTP — never active in a production build. Steps that call
+// real backend endpoints on submit still do (and will fail without a real
+// session); this only gets you to the screen to look at it.
+const DEV_JUMP_ENABLED = process.env.NODE_ENV !== "production";
+const DEV_JUMP_STEPS: Step[] = ["photo", "campus", "code"];
+
+const DEV_MOCK_CAMPUSES: CampusPickerItem[] = [
+  {
+    campusId: -1,
+    fullName: "Presbyterian Boys Senior High School",
+    nickname: "Presec Legon",
+    teamId: -1,
+    memberCount: 87,
+    whenLabel: "Tomorrow · 9am",
+    state: "tomorrow",
+  },
+  {
+    campusId: -2,
+    fullName: "Mfantsipim School",
+    nickname: "Mfantsipim",
+    teamId: -2,
+    memberCount: 64,
+    whenLabel: "Today · 3pm",
+    state: "today",
+  },
+  {
+    campusId: -3,
+    fullName: "Wesley Girls High School",
+    nickname: "Wesley Girls",
+    teamId: -3,
+    memberCount: 52,
+    whenLabel: "August 19 · Out",
+    state: "out",
+  },
+];
 
 const MONTHS = [
   "January",
@@ -49,6 +101,64 @@ const MONTHS = [
   "November",
   "December",
 ];
+
+// title-cases as you type ("john kwame" -> "John Kwame") and strips anything
+// that isn't a letter, space, apostrophe or hyphen - a real name, not a handle
+function smartName(raw: string): string {
+  let v = raw.replace(/[^a-zA-ZÀ-ɏ' -]/g, "");
+  v = v.replace(/\s{2,}/g, " ").replace(/^\s+/, "");
+  v = v.replace(
+    /(^\s*[a-zA-ZÀ-ɏ])|(\s+[a-zA-ZÀ-ɏ])/g,
+    (m) => m.toUpperCase(),
+  );
+  return v;
+}
+
+// no real crest/banner from the backend for this campus - a plain warm
+// gradient in the app's own palette, not a fabricated crest
+const CAMPUS_FALLBACK_BG =
+  "radial-gradient(120% 160% at 50% 0%, #43302a 0%, #2b1f1c 55%, #1a1412 100%)";
+
+// colors ported 1:1 from the legacy prototype's .sc-when / .st-today /
+// .st-tomorrow / .st-out rules - "today" reads warm/urgent, "out" reads
+// muted/closed, per the same three states the real API sends
+function campusPillStyle(state: string | undefined): CSSProperties {
+  if (state === "today") {
+    return {
+      background: "linear-gradient(135deg,#fff2cf,#ffd98a 46%,#e0a63c)",
+      color: "#3a2703",
+      borderColor: "rgba(255,255,255,.5)",
+    };
+  }
+  if (state === "out") {
+    return {
+      background:
+        "radial-gradient(120% 160% at 50% 0%,#733730 0%,#572621 48%,#3b1a17 100%)",
+      color: "#f0d7b4",
+      borderColor: "rgba(232,212,173,.38)",
+    };
+  }
+  // tomorrow / future share the mock's default gold treatment
+  return {
+    background: "linear-gradient(135deg,#f6e7c4,#e8d4ad 48%,#b8935a)",
+    color: "#2a2007",
+    borderColor: "rgba(255,255,255,.5)",
+  };
+}
+
+function campusDotStyle(state: string | undefined): CSSProperties {
+  if (state === "today") {
+    return {
+      background: "#d8341f",
+      boxShadow: "0 0 9px rgba(216,52,31,.85)",
+      animation: "campus-live 1.15s ease-in-out infinite",
+    };
+  }
+  if (state === "out") {
+    return { background: "#ed4b58", boxShadow: "0 0 8px rgba(237,75,88,.6)" };
+  }
+  return { background: "#1e8f57", boxShadow: "0 0 8px rgba(30,143,87,.7)" };
+}
 
 const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const CURRENT_YEAR = new Date().getFullYear();
@@ -82,9 +192,10 @@ const PROGRESS: Record<Step, number> = {
   email: 8,
   signup: 20,
   verify: 30,
+  photo: 52,
   signin: 15,
-  campus: 45,
-  code: 55,
+  campus: 65,
+  code: 80,
   done: 100,
 };
 
@@ -108,7 +219,26 @@ type SavedProgress = {
 };
 
 export default function OnboardPage() {
-  const [step, setStep] = useState<Step>("choice");
+  return (
+    <Suspense fallback={null}>
+      <OnboardPageInner />
+    </Suspense>
+  );
+}
+
+function OnboardPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const devJumpParam = searchParams.get("devstep");
+  const devJumpStep =
+    DEV_JUMP_ENABLED && DEV_JUMP_STEPS.includes(devJumpParam as Step)
+      ? (devJumpParam as Step)
+      : null;
+  // "code" isn't a real step (it's a modal over "campus") — devstep=code
+  // lands on campus with the modal pre-opened, handled below
+  const [step, setStep] = useState<Step>(
+    devJumpStep === "code" ? "campus" : (devJumpStep ?? "choice"),
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -134,50 +264,64 @@ export default function OnboardPage() {
   const [resendIn, setResendIn] = useState(0);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoZoom, setPhotoZoom] = useState(1);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+
   const [campusQuery, setCampusQuery] = useState("");
-  const [campuses, setCampuses] = useState<CampusPickerItem[]>([]);
+  const [campuses, setCampuses] = useState<CampusPickerItem[]>(
+    devJumpStep === "campus" ? DEV_MOCK_CAMPUSES : [],
+  );
   const [campusesLoading, setCampusesLoading] = useState(false);
   const [selectedCampus, setSelectedCampus] = useState<CampusPickerItem | null>(
-    null,
+    devJumpStep === "code" ? DEV_MOCK_CAMPUSES[0] : null,
   );
 
-  // access codes are 9 characters, shown grouped 3-3-3 (e.g. "99U-38N-23H")
+  // the access-code gate is a modal over the campus grid, not its own step
+  const [codeModalOpen, setCodeModalOpen] = useState(devJumpStep === "code");
+  // which card is mid-selection right now - shows a spinner on that one
+  // specifically while pickCampus()'s PUT is in flight
+  const [pickingCampusId, setPickingCampusId] = useState<number | null>(null);
+  // 9 characters, no dashes - the integration guide documents 8, but real
+  // codes issued to schools are 9 (confirmed against an actual code)
   const [code, setCode] = useState<string[]>(Array(9).fill(""));
   const [codeState, setCodeState] = useState<"" | "good" | "bad">("");
   const [codeMessage, setCodeMessage] = useState("");
   const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const [assentText, setAssentText] = useState("");
   const [assentTextVersion, setAssentTextVersion] = useState("");
-  const [assentChecked, setAssentChecked] = useState(false);
 
   const [restored, setRestored] = useState(false);
 
-  // the assent wording (and its version) is decided by the backend and can
-  // change between contests, so it has to be fetched live rather than
-  // hardcoded — a stale local version was why joins were failing.
-  // This endpoint requires an authenticated session, so fetch it once the
-  // user reaches the code step (they're always signed in by then), not on
-  // page load when a fresh visitor has no session yet.
+  // the assent version is decided by the backend and can change between
+  // contests, so it has to be fetched live rather than hardcoded — a stale
+  // local version was why joins were failing. The agreement itself isn't
+  // shown to the student here (that's not how the mock does it) — the code
+  // step just needs the current version so the join can auto-accept it.
   useEffect(() => {
-    if (step !== "code" || assentText) return;
+    if (step !== "code" || assentTextVersion) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await getLockinVersion(VERSION_CODE);
         if (cancelled) return;
-        setAssentText(res.data?.assentText ?? "");
         setAssentTextVersion(res.data?.assentTextVersion ?? "");
       } catch {
-        // non-fatal here; completeCode() checks for a missing version below
+        // non-fatal here; a join attempt will surface the real error if the
+        // version really is required and missing
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [step, assentText]);
+  }, [step, assentTextVersion]);
 
   useEffect(() => {
+    if (devJumpStep) {
+      const raf = requestAnimationFrame(() => setRestored(true));
+      return () => cancelAnimationFrame(raf);
+    }
     const raf = requestAnimationFrame(() => {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -204,12 +348,50 @@ export default function OnboardPage() {
       setRestored(true);
     });
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [devJumpStep]);
 
-  const [sessionChecked, setSessionChecked] = useState(false);
+  // the single source of truth for "given the server's nextStep, where does
+  // this patient go" — used after verify/sign-in/join so a returning, fully
+  // joined patient lands on their check or home instead of being walked
+  // through campus + access code again just because they signed in again
+  const routeByNextStep = useCallback(
+    async (nextStep: string | undefined, fallback: Step) => {
+      switch (nextStep) {
+        case "VERIFY_OTP":
+          setStep("verify");
+          return;
+        case "PROFILE_PHOTO":
+          setStep("photo");
+          return;
+        case "TEAM_PICKER":
+          setStep("campus");
+          return;
+        case "ACCESS_CODE":
+          // the code gate is a modal over the campus grid — if we still
+          // know which campus they picked (restored from this browser),
+          // reopen it directly; otherwise land on the grid to pick again
+          setStep("campus");
+          if (selectedCampus) setCodeModalOpen(true);
+          return;
+        case "SCREENING":
+          router.push("/screening");
+          return;
+        case "HOME":
+          router.push("/home");
+          return;
+        default:
+          setStep(fallback);
+      }
+    },
+    [router, selectedCampus],
+  );
+
+  const [sessionChecked, setSessionChecked] = useState(!!devJumpStep);
 
   useEffect(() => {
-    if (!restored) return; // wait for local progress to be restored first
+    // dev-jump already forced the destination step deliberately — don't let
+    // a real (likely unauthenticated) session check second-guess it
+    if (!restored || devJumpStep) return;
     let cancelled = false;
     (async () => {
       try {
@@ -217,8 +399,8 @@ export default function OnboardPage() {
         if (cancelled) return;
         if (res.data?.teamId) {
           // already signed in and already joined a team - skip the whole
-          // flow (this is where a real dashboard route would take over)
-          setStep("done");
+          // flow and go straight to whatever's actually next for them
+          await routeByNextStep(res.data?.nextStep, "done");
         }
       } catch (e) {
         if (cancelled) return;
@@ -238,7 +420,7 @@ export default function OnboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [restored]);
+  }, [restored, routeByNextStep, devJumpStep]);
 
   useEffect(() => {
     if (!restored) return; // don't overwrite saved progress with initial state
@@ -291,6 +473,30 @@ export default function OnboardPage() {
     }
   }, [step]);
 
+  // "done" isn't a real destination — membership.nextStep decides whether
+  // this patient owes a screening or lands on the day view, for both a
+  // fresh join and a returning session that resolved straight to "done"
+  useEffect(() => {
+    if (step !== "done") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getVersionMembership(VERSION_CODE);
+        if (cancelled) return;
+        if (res.data?.screeningDue || res.data?.nextStep === "SCREENING") {
+          router.push("/screening");
+        } else {
+          router.push("/home");
+        }
+      } catch {
+        if (!cancelled) router.push("/home");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [step, router]);
+
   useEffect(() => {
     if (resendIn <= 0) return;
     const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
@@ -322,6 +528,7 @@ export default function OnboardPage() {
 
   function pickContactMethod(type: ContactType) {
     setContactType(type);
+    setContactValue("");
     setError(null);
     setStep(type === "PHONE" ? "phone" : "email");
   }
@@ -338,6 +545,21 @@ export default function OnboardPage() {
       const res = await checkContact(contactType, value);
       setContactValue(value);
       if (res.data?.exists) {
+        // we already know this exact account never finished verifying (they
+        // left before entering the OTP) — resume straight there instead of
+        // asking for a password, since an unverified account can't sign in
+        if (res.data.userId && res.data.userId === userId && otpReference) {
+          try {
+            const otpRes = await sendOtp(userId);
+            setOtpReference(otpRes.data?.otpReference ?? otpReference);
+            setResendIn(otpRes.data?.expiresInSeconds ?? 57);
+            setStep("verify");
+            return;
+          } catch {
+            // couldn't refresh the OTP — fall through to sign-in, which
+            // still resolves correctly if the account really is unverified
+          }
+        }
         setUserId(res.data.userId ?? "");
         setSigninNickname(res.data.nickname ?? "there");
         setStep("signin");
@@ -367,10 +589,6 @@ export default function OnboardPage() {
       !dobYear
     ) {
       setError("Please fill in every field.");
-      return;
-    }
-    if (!/\d/.test(nickname)) {
-      setError("Nickname must include at least one number.");
       return;
     }
     if (
@@ -433,8 +651,8 @@ export default function OnboardPage() {
     setLoading(true);
     setError(null);
     try {
-      await verifyOtp(otpReference, fullCode);
-      setStep("campus");
+      const res = await verifyOtp(otpReference, fullCode);
+      await routeByNextStep(res.data?.nextStep, "campus");
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "That code didn't work");
       setOtp(Array(6).fill(""));
@@ -455,6 +673,71 @@ export default function OnboardPage() {
     }
   }
 
+  function pickPhoto() {
+    photoInputRef.current?.click();
+  }
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoZoom(1);
+    setPhotoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  }
+
+  // crops the preview to a square at the chosen zoom, matching what's shown
+  // in the circular frame, rather than uploading the original untouched file
+  function cropPhotoToBlob(img: HTMLImageElement, zoom: number): Promise<Blob | null> {
+    const size = 480;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return Promise.resolve(null);
+    const side = Math.min(img.naturalWidth, img.naturalHeight) / zoom;
+    const sx = (img.naturalWidth - side) / 2;
+    const sy = (img.naturalHeight - side) / 2;
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+  }
+
+  async function submitPhoto() {
+    // dev-jump previews this screen with no real session — the real
+    // skip/upload endpoints would just 401, so simulate success and move on
+    if (devJumpStep) {
+      setStep("campus");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      if (!photoFile || !photoPreviewUrl) {
+        const res = await skipProfilePhoto();
+        await routeByNextStep(res.data?.nextStep, "campus");
+        return;
+      }
+      const img = document.createElement("img");
+      const loaded = new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Couldn't read that photo"));
+      });
+      img.src = photoPreviewUrl;
+      await loaded;
+      const blob = await cropPhotoToBlob(img, photoZoom);
+      if (!blob) throw new Error("Couldn't process that photo");
+      const res = await uploadProfilePhoto(blob);
+      await routeByNextStep(res.data?.nextStep, "campus");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't upload that photo");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function submitSignin() {
     if (!signinPassword) return;
     setLoading(true);
@@ -468,11 +751,10 @@ export default function OnboardPage() {
         setStep("verify");
         return;
       }
-      if (res.data?.activeVersion?.enrollmentStatus === "JOINED") {
-        setStep("done");
-      } else {
-        setStep("campus");
-      }
+      await routeByNextStep(
+        res.data?.nextStep ?? res.data?.activeVersion?.nextStep,
+        "campus",
+      );
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Something went wrong");
     } finally {
@@ -481,47 +763,107 @@ export default function OnboardPage() {
   }
 
   async function pickCampus(item: CampusPickerItem) {
+    // shows a spinner on this specific card while the PUT below is in
+    // flight - the modal can't open before it resolves, since the join-code
+    // submit that follows needs the campus already selected server-side
+    setPickingCampusId(item.campusId);
+    // dev-jump previews this screen with no real session — skip the real
+    // PUT, which would just 401, and open the code modal directly
+    if (devJumpStep) {
+      setSelectedCampus(item);
+      setCodeModalOpen(true);
+      setPickingCampusId(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       await selectVersionCampus(VERSION_CODE, item.campusId);
       setSelectedCampus(item);
-      setStep("code");
+      setCodeModalOpen(true);
     } catch (e) {
       setError(
         e instanceof ApiError ? e.message : "Couldn't select that school",
       );
     } finally {
       setLoading(false);
+      setPickingCampusId(null);
     }
   }
 
-  async function completeCode(fullCode: string) {
+  async function completeCode(
+    fullCode: string,
+    retried = false,
+    versionOverride?: string,
+  ) {
     if (!selectedCampus) return;
-    if (assentText && !assentChecked) {
-      setCodeState("bad");
-      setCodeMessage("Please read and agree to the terms above first.");
+    // dev-jump previews this screen against a fake campus with no real
+    // session — no real code could ever validate, so simulate success
+    if (devJumpStep) {
+      setCodeState("good");
+      setCodeMessage("Great, you're in! (dev preview)");
+      setTimeout(() => {
+        setCodeModalOpen(false);
+        setStep("done");
+      }, 1100);
       return;
     }
     setLoading(true);
     try {
-      await joinVersionTeam(VERSION_CODE, {
+      const res = await joinVersionTeam(VERSION_CODE, {
         campusId: selectedCampus.campusId,
         accessCode: fullCode,
         assentAccepted: true,
-        assentTextVersion: assentTextVersion,
+        assentTextVersion: versionOverride ?? assentTextVersion,
       });
       setCodeState("good");
-      setCodeMessage("Great, you're in!");
-      setTimeout(() => setStep("done"), 1100);
+      // a retried request after a timeout can land on a membership that's
+      // already active — the guide is explicit that this counts as success
+      setCodeMessage(
+        res.data?.alreadyJoined
+          ? "You're already on this team!"
+          : "Great, you're in!",
+      );
+      setTimeout(() => {
+        setCodeModalOpen(false);
+        routeByNextStep(res.data?.nextStep, "done");
+      }, 1100);
     } catch (e) {
-      // the API doesn't document specific error codes for this endpoint, so
-      // show its actual message rather than guessing what a status code means
+      const code = e instanceof ApiError ? e.code : undefined;
+
+      // the assent version changed server-side since it was fetched — the
+      // agreement isn't shown to the student here, so refetch the current
+      // version and retry silently once rather than surfacing this at all
+      if ((code === "ASSENT_REQUIRED" || code === "ASSENT_STALE") && !retried) {
+        try {
+          const v = await getLockinVersion(VERSION_CODE);
+          const fresh = v.data?.assentTextVersion ?? "";
+          setAssentTextVersion(fresh);
+          await completeCode(fullCode, true, fresh);
+          return;
+        } catch {
+          // fall through to the generic error below
+        }
+      }
+
+      // this version isn't the patient's active enrolment (e.g. resumed on a
+      // different device) — activate it once, then retry the same join
+      if (code === "NO_ACTIVE_ENROLLMENT" && !retried) {
+        try {
+          await activateEnrollment(VERSION_CODE);
+          await completeCode(fullCode, true);
+          return;
+        } catch {
+          // fall through to the generic error below
+        }
+      }
+
       setCodeState("bad");
       setCodeMessage(
-        e instanceof ApiError
-          ? e.message
-          : "That access code didn't work. Please try again.",
+        (code && JOIN_ERROR_COPY[code]) ||
+          (e instanceof ApiError
+            ? e.message
+            : "That access code didn't work. Please try again."),
       );
     } finally {
       setLoading(false);
@@ -529,8 +871,8 @@ export default function OnboardPage() {
   }
 
   function handleCodeChange(i: number, raw: string) {
-    // strips the dashes real codes are formatted with ("99U-38N-23H") so
-    // typing or pasting the full thing into any box works
+    // strips anything that isn't alphanumeric so pasting a full code (in
+    // case a school hands it out with separators) into any box still works
     const cleaned = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
     const next = [...code];
 
@@ -568,8 +910,11 @@ export default function OnboardPage() {
       case "verify":
         setStep(userId && signinNickname ? "signin" : "signup");
         return;
-      case "campus":
+      case "photo":
         setStep("verify");
+        return;
+      case "campus":
+        setStep("photo");
         return;
       case "code":
         setStep("campus");
@@ -613,6 +958,15 @@ export default function OnboardPage() {
           enabled: !loading && signinPassword.length > 0,
           label: loading ? "Signing in…" : "Sign In",
           onClick: submitSignin,
+        };
+      case "photo":
+        // matches the mock: always "Next" — skipping when no photo was
+        // chosen is silent, never called out on the button itself
+        return {
+          show: true,
+          enabled: !loading,
+          label: loading ? "One sec…" : `Next (${PROGRESS.photo}%)`,
+          onClick: submitPhoto,
         };
       default:
         return { show: false, enabled: false, label: "", onClick: () => {} };
@@ -662,7 +1016,11 @@ export default function OnboardPage() {
           </div>
         </div>
 
-        <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-10">
+        <div
+          className={`mx-auto flex w-full flex-1 flex-col justify-center py-10 ${
+            step === "campus" ? "max-w-none" : "max-w-md"
+          }`}
+        >
           <AnimatePresence mode="wait">
             <motion.div
               key={step}
@@ -734,10 +1092,16 @@ export default function OnboardPage() {
                               className={inputClass}
                               type="tel"
                               inputMode="numeric"
+                              autoComplete="tel-national"
+                              name="phone"
                               maxLength={10}
                               placeholder="24 123 4567"
                               value={contactValue}
-                              onChange={(e) => setContactValue(e.target.value)}
+                              onChange={(e) =>
+                                setContactValue(
+                                  e.target.value.replace(/\D/g, ""),
+                                )
+                              }
                             />
                           </Field>
                         </div>
@@ -747,6 +1111,8 @@ export default function OnboardPage() {
                         <input
                           className={inputClass}
                           type="email"
+                          autoComplete="email"
+                          name="email"
                           placeholder="you@example.com"
                           value={contactValue}
                           onChange={(e) => setContactValue(e.target.value)}
@@ -780,7 +1146,7 @@ export default function OnboardPage() {
                         className={inputClass}
                         placeholder="What's your name?"
                         value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        onChange={(e) => setName(smartName(e.target.value))}
                       />
                     </Field>
                     <Field label="Nickname">
@@ -790,16 +1156,6 @@ export default function OnboardPage() {
                         value={nickname}
                         onChange={(e) => setNickname(e.target.value)}
                       />
-                      <p
-                        className={`mt-1 text-xs ${
-                          nickname && !/\d/.test(nickname)
-                            ? "text-no"
-                            : "text-muted"
-                        }`}
-                      >
-                        {/\d/.test(nickname) ? "✓ " : "· "}Must include at least
-                        one number
-                      </p>
                     </Field>
                     <Field label="Gender">
                       <div className="flex gap-3">
@@ -822,21 +1178,21 @@ export default function OnboardPage() {
                     <Field label="Date of birth">
                       <div className="flex gap-2">
                         <CustomSelect
-                          className="w-24"
+                          className="min-w-0 flex-[2]"
                           placeholder="Day"
                           value={dobDay}
                           onChange={setDobDay}
                           options={DAYS}
                         />
                         <CustomSelect
-                          className="flex-1"
+                          className="min-w-0 flex-[5]"
                           placeholder="Month"
                           value={dobMonth}
                           onChange={setDobMonth}
                           options={MONTHS}
                         />
                         <CustomSelect
-                          className="w-28"
+                          className="min-w-0 flex-[3]"
                           placeholder="Year"
                           value={dobYear}
                           onChange={setDobYear}
@@ -898,14 +1254,18 @@ export default function OnboardPage() {
                     <br />
                     <strong className="text-txt">{contactValue}</strong>
                   </p>
-                  <div className="mt-6 flex justify-center gap-2">
+                  <div className="mt-6 flex justify-center gap-[1.5vw] sm:gap-2">
                     {otp.map((v, i) => (
                       <input
                         key={i}
                         ref={(el) => {
                           otpRefs.current[i] = el;
                         }}
-                        className="border-line text-txt focus:border-gold/60 h-14 w-11 rounded-xl border bg-white/5 text-center text-xl font-bold outline-none"
+                        className="border-line text-txt focus:border-gold/60 aspect-[4/5] rounded-xl border bg-white/5 text-center font-bold outline-none"
+                        style={{
+                          width: "clamp(32px, 11vw, 44px)",
+                          fontSize: "clamp(16px, 4.5vw, 20px)",
+                        }}
                         maxLength={1}
                         inputMode="numeric"
                         value={v}
@@ -962,6 +1322,105 @@ export default function OnboardPage() {
                 </div>
               )}
 
+              {step === "photo" && (
+                <div className="flex flex-col items-center text-center">
+                  <h1
+                    className="font-extrabold tracking-tight"
+                    style={{ fontSize: "clamp(1.75rem, 4.5vw, 3rem)" }}
+                  >
+                    Add A Photo
+                  </h1>
+                  <p
+                    className="text-muted mt-2"
+                    style={{ fontSize: "clamp(0.95rem, 1.6vw, 1.15rem)" }}
+                  >
+                    A quick photo so we know it&apos;s you,{" "}
+                    <strong className="text-txt">{nickname || "there"}</strong>
+                    .
+                  </p>
+
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoChange}
+                  />
+
+                  <div className="mt-6 flex flex-col items-center gap-[22px]">
+                    <button
+                      type="button"
+                      onClick={pickPhoto}
+                      className={`photo-circle${photoPreviewUrl ? " filled" : ""}`}
+                    >
+                      {photoPreviewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- object URL preview, not a static/remote asset
+                        <img
+                          src={photoPreviewUrl}
+                          alt=""
+                          className="photo-img"
+                          style={{ transform: `scale(${photoZoom})` }}
+                        />
+                      ) : (
+                        <span className="photo-empty">
+                          <span className="photo-empty-icon">+</span>
+                          <span className="photo-empty-text">
+                            Upload a photo
+                          </span>
+                        </span>
+                      )}
+                    </button>
+
+                    <div className={`zoom-row${photoPreviewUrl ? " on" : ""}`}>
+                      <button
+                        type="button"
+                        className="zoom-sign"
+                        disabled={!photoPreviewUrl}
+                        onClick={() =>
+                          setPhotoZoom((z) => Math.max(1, z - 0.1))
+                        }
+                      >
+                        −
+                      </button>
+                      <input
+                        type="range"
+                        className="zoom-slider"
+                        min={1}
+                        max={2.5}
+                        step={0.05}
+                        value={photoZoom}
+                        disabled={!photoPreviewUrl}
+                        onChange={(e) => setPhotoZoom(Number(e.target.value))}
+                      />
+                      <button
+                        type="button"
+                        className="zoom-sign"
+                        disabled={!photoPreviewUrl}
+                        onClick={() =>
+                          setPhotoZoom((z) => Math.min(2.5, z + 0.1))
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <p className="text-no min-h-[18px] text-sm">
+                      {error}
+                    </p>
+
+                    {photoPreviewUrl && (
+                      <button
+                        type="button"
+                        onClick={pickPhoto}
+                        className="replace-btn"
+                      >
+                        Choose a different photo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {step === "campus" && (
                 <div>
                   <h1 className="text-3xl font-extrabold tracking-tight">
@@ -971,12 +1430,12 @@ export default function OnboardPage() {
                     Search for your school&apos;s NSMQ team.
                   </p>
                   <input
-                    className={`${inputClass} mt-6`}
+                    className="border-line focus:border-gold/60 text-txt placeholder:text-muted mt-4 w-full rounded-xl border bg-white/5 px-4 py-2 text-sm outline-none"
                     placeholder="Search your school"
                     value={campusQuery}
                     onChange={(e) => setCampusQuery(e.target.value)}
                   />
-                  <div className="mt-4 flex max-h-96 flex-col gap-2 overflow-y-auto">
+                  <div className="mt-4">
                     {campusesLoading && (
                       <p className="text-muted py-6 text-center">Searching…</p>
                     )}
@@ -985,148 +1444,108 @@ export default function OnboardPage() {
                         No schools found.
                       </p>
                     )}
-                    {campuses.map((c) => (
-                      <button
-                        key={c.campusId}
-                        type="button"
-                        onClick={() => pickCampus(c)}
-                        disabled={loading}
-                        className="border-line hover:border-gold/60 flex items-center justify-between rounded-xl border bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10 disabled:opacity-60"
-                      >
-                        <span>
-                          <span className="block font-semibold">
-                            {c.fullName ?? c.nickname}
-                          </span>
-                          {c.whenLabel && (
-                            <span className="text-muted text-xs">
-                              {c.whenLabel}
-                            </span>
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                      {campuses.map((c) => {
+                        const bgUrl = c.logo ?? c.bannerPhoto;
+                        return (
+                        <button
+                          key={c.campusId}
+                          type="button"
+                          onClick={() => pickCampus(c)}
+                          disabled={loading}
+                          className="border-gold group relative aspect-square overflow-hidden rounded-2xl border-[1.65px] text-left text-white shadow-[0_8px_22px_rgba(0,0,0,.45)] transition-transform duration-150 hover:-translate-y-1 hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-60"
+                        >
+                          <div
+                            className="absolute inset-0 bg-[#222] bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.09]"
+                            style={
+                              bgUrl
+                                ? { backgroundImage: `url('${bgUrl}')` }
+                                : { background: CAMPUS_FALLBACK_BG }
+                            }
+                          />
+                          <div
+                            className="absolute inset-0"
+                            style={{
+                              background:
+                                "linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.78) 75%)",
+                            }}
+                          />
+                          {c.state === "out" && (
+                            <div
+                              className="absolute inset-0 z-[2]"
+                              style={{
+                                background:
+                                  "linear-gradient(180deg, rgba(43,18,16,.28), rgba(43,18,16,.52))",
+                              }}
+                            />
                           )}
-                        </span>
-                        {typeof c.memberCount === "number" && (
-                          <span className="text-muted text-xs">
-                            {c.memberCount} in
-                          </span>
-                        )}
-                      </button>
-                    ))}
+
+                          {/* a shared flex row, not two independently-positioned
+                              pills - so a long whenLabel shrinks/truncates
+                              instead of overlapping the member-count pill */}
+                          <div className="absolute inset-x-3 top-3 z-[6] flex items-start justify-between gap-2">
+                            {typeof c.memberCount === "number" &&
+                            c.memberCount > 0 ? (
+                              <div
+                                className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-extrabold"
+                                style={{
+                                  background: "#c9f0dd",
+                                  color: "#0c3d26",
+                                  borderColor: "rgba(30,143,87,.45)",
+                                }}
+                              >
+                                <span style={{ filter: "saturate(0) brightness(.35)" }}>
+                                  ⭐
+                                </span>
+                                <span>{c.memberCount}</span>
+                              </div>
+                            ) : (
+                              <span />
+                            )}
+
+                            {c.whenLabel && (
+                              <div
+                                className="inline-flex min-w-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-extrabold"
+                                style={campusPillStyle(c.state)}
+                              >
+                                <span
+                                  className="size-[5px] shrink-0 rounded-full"
+                                  style={campusDotStyle(c.state)}
+                                />
+                                <span className="truncate">{c.whenLabel}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="absolute right-0 bottom-[18px] left-0 z-[2] px-4">
+                            <div
+                              className={`text-xl font-bold ${c.state === "out" ? "opacity-90" : ""}`}
+                            >
+                              {c.fullName ?? c.nickname}
+                            </div>
+                          </div>
+
+                          {pickingCampusId === c.campusId && (
+                            <div className="absolute inset-0 z-[7] flex items-center justify-center bg-black/50">
+                              <div className="border-gold size-8 animate-spin rounded-full border-2 border-t-transparent" />
+                            </div>
+                          )}
+                        </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   {error && <p className="text-no mt-4 text-sm">{error}</p>}
                 </div>
               )}
 
-              {step === "code" && (
-                <div className="text-center">
-                  <h1 className="text-2xl font-extrabold tracking-tight">
-                    Join{" "}
-                    <em className="text-gold not-italic">
-                      {selectedCampus?.fullName}
-                    </em>
-                  </h1>
-                  <div className="bg-gold/60 mx-auto mt-3 h-px w-16" />
-                  <p className="text-muted mt-4">
-                    The{" "}
-                    <strong className="text-txt">
-                      {selectedCampus?.fullName}
-                    </strong>{" "}
-                    NSMQ team is private. To join your team, enter the access
-                    code provided by your school.
-                  </p>
-
-                  {assentText && (
-                    <div className="border-line mt-6 text-left">
-                      <div className="border-line max-h-40 overflow-y-auto rounded-xl border bg-white/5 p-4 text-sm whitespace-pre-line text-txt/80">
-                        {assentText}
-                      </div>
-                      <label className="mt-3 flex items-start gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={assentChecked}
-                          onChange={(e) => {
-                            setAssentChecked(e.target.checked);
-                            setCodeState("");
-                            setCodeMessage("");
-                          }}
-                          className="mt-0.5"
-                        />
-                        <span className="text-muted">
-                          I have read and agree to the terms above.
-                        </span>
-                      </label>
-                    </div>
-                  )}
-
-                  <div className="mt-6 flex items-center justify-center gap-[1.5vw] sm:gap-2">
-                    {code.map((v, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-[1.5vw] sm:gap-2"
-                      >
-                        <input
-                          ref={(el) => {
-                            codeRefs.current[i] = el;
-                          }}
-                          disabled={!!assentText && !assentChecked}
-                          className={`aspect-[4/5] rounded-lg border text-center font-bold uppercase outline-none disabled:opacity-40 ${
-                            codeState === "good"
-                              ? "border-yes bg-yes/10 text-yes"
-                              : codeState === "bad"
-                                ? "border-no bg-no/10 text-no"
-                                : "border-line text-txt focus:border-gold/60 bg-white/5"
-                          }`}
-                          style={{
-                            width: "clamp(24px, 7vw, 40px)",
-                            fontSize: "clamp(13px, 3.6vw, 18px)",
-                          }}
-                          value={v}
-                          onChange={(e) => handleCodeChange(i, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Backspace" && !v && i > 0) {
-                              codeRefs.current[i - 1]?.focus();
-                            }
-                          }}
-                        />
-                        {(i === 2 || i === 5) && (
-                          <span className="text-muted font-bold">-</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  {codeMessage && (
-                    <p
-                      className={`mt-3 text-sm font-medium ${
-                        codeState === "good" ? "text-yes" : "text-no"
-                      }`}
-                    >
-                      {codeMessage}
-                    </p>
-                  )}
-                  <p className="text-muted mt-6 text-sm">
-                    Need your code?{" "}
-                    <strong className="text-txt">Contact your team.</strong>
-                  </p>
-                  <Image
-                    src="/images/access-code-illustration.webp"
-                    alt=""
-                    width={200}
-                    height={280}
-                    className="mx-auto mt-6 h-40 w-auto"
-                  />
-                </div>
-              )}
 
               {step === "done" && (
                 <div className="text-center">
                   <h1 className="text-yes text-3xl font-extrabold tracking-tight">
                     You&apos;re in!
                   </h1>
-                  <p className="text-muted mt-3">
-                    Your battery check comes next — that screen isn&apos;t built
-                    yet.
-                  </p>
-                  <Link href="/" className="land-cta-btn mt-6 inline-flex">
-                    Back to JustGo Health
-                  </Link>
+                  <p className="text-muted mt-3">Taking you there now…</p>
                 </div>
               )}
             </motion.div>
@@ -1173,6 +1592,17 @@ export default function OnboardPage() {
           </div>
         )}
       </div>
+
+      <CodeGateModal
+        open={codeModalOpen}
+        campusName={selectedCampus?.fullName ?? selectedCampus?.nickname}
+        code={code}
+        codeState={codeState}
+        codeMessage={codeMessage}
+        codeRefs={codeRefs}
+        onCodeChange={handleCodeChange}
+        onClose={() => setCodeModalOpen(false)}
+      />
     </div>
   );
 }
