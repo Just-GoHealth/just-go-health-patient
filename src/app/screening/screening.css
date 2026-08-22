@@ -450,11 +450,14 @@
 
 /* ---- answer options ---- */
 .mh-opts {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: clamp(9px, 1.5vh, 16px);
-  flex-wrap: wrap;
-  justify-content: center;
   width: 100%;
+  max-width: 640px;
+}
+.mh-opts .mh-opt {
+  justify-content: center;
 }
 .mh-opt {
   position: relative;
@@ -553,21 +556,52 @@
 }
 .mh-bar-title {
   font-weight: 800;
-  font-size: clamp(25.3px, 4.14vh, 46px);
+  font-size: clamp(16px, 4.14vh, 46px);
   letter-spacing: -0.5px;
+  /* the counter/battery on the right is fixed-width, so the title has to
+     be the one that shrinks (and can wrap) rather than pushing it off */
+  min-width: 0;
+  flex: 1 1 auto;
+}
+/* mobile: the left profile panel (with the real battery) is hidden below
+   900px, so this bar-head battery stands in for it instead of the plain
+   X/N counter — same data, same color/label logic, just compact */
+.mh-bar-batt {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.mh-bar-batt span {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--color-gold);
 }
 .mh-tracker {
   width: clamp(48px, 6.4vh, 64px);
   height: clamp(48px, 6.4vh, 64px);
   border-radius: 50%;
-  border: 2px solid var(--color-gold);
+  /* box-shadow instead of border — a real border on a fractional (clamp())
+     circle diameter can leave a 1px rendering seam at one edge */
+  box-shadow: inset 0 0 0 2px var(--color-gold);
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: center;
   gap: 1px;
   font-weight: 800;
   color: var(--color-gold);
   flex: 0 0 auto;
+}
+/* mobile: the left profile panel (with the real battery) is hidden below
+   900px, so the bar-head battery stands in for it instead of the plain
+   X/N counter — placed after the rules above so it actually wins */
+@media (max-width: 900px) {
+  .mh-tracker {
+    display: none;
+  }
+  .mh-bar-batt {
+    display: flex;
+  }
 }
 .mh-tracker span {
   font-size: clamp(20.7px, 2.99vh, 29.9px);
@@ -610,11 +644,14 @@
   width: clamp(52px, 7vh, 68px);
   height: clamp(52px, 7vh, 68px);
   border-radius: 50%;
-  border: 2.5px solid var(--color-gold);
+  /* box-shadow instead of border — same rendering-seam issue as
+     .mh-tracker, a real border on a fractional clamp() diameter can leave
+     a 1px gap at one edge */
   background: rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   box-shadow:
+    inset 0 0 0 2.5px var(--color-gold),
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     0 4px 14px rgba(0, 0, 0, 0.35);
   display: flex;
@@ -687,7 +724,9 @@
 .board-screen {
   min-height: 100vh;
   min-height: 100dvh;
-  background: radial-gradient(140% 100% at 50% -10%, #241a14 0%, var(--color-ink) 55%);
+  /* same warm gradient as the rest of the app (onboarding, the battery
+     screen) — the dark near-black gradient this had before didn't match */
+  background: radial-gradient(118% 86% at 50% 16%, #733730 0%, #572621 42%, #3b1a17 74%, #2b1210 100%);
   color: var(--color-txt);
   padding: clamp(28px, 5vh, 56px) clamp(16px, 4vw, 40px);
 }

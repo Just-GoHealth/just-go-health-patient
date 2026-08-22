@@ -10,6 +10,7 @@ import {
   acknowledgeCare,
   answerScreeningItem,
   getHomeProfile,
+  getLatestBoard,
   getVersionMembership,
   logout,
   startOrResumeScreening,
@@ -255,6 +256,18 @@ function ScreeningPageInner() {
           setErrorMessage("This check couldn't be opened. Please try again.");
           return;
         }
+        // resuming a run that's already fully answered (e.g. the tab was
+        // refreshed right after the last answer, before this page ever saw
+        // the "complete" response) — submit is idempotent, so finish it out
+        // and go straight to the board instead of re-showing the last
+        // question with its answer already selected
+        if (items.every((it) => it.answeredIndex != null)) {
+          const boardRes = await submitScreening(data.screeningId);
+          if (cancelled) return;
+          setBoard(boardRes.data ?? null);
+          setPhase("board");
+          return;
+        }
         setRun(data);
         const initialAnswers = items.map((it) => it.answeredIndex ?? null);
         setAnswers(initialAnswers);
@@ -267,6 +280,21 @@ function ScreeningPageInner() {
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           router.push("/onboard");
           return;
+        }
+        // the backend may refuse to (re)open a screening that's already
+        // been submitted for this window, rather than just returning it
+        // fully-answered — if a real scored board exists, show that
+        // instead of a dead-end error
+        try {
+          const boardRes = await getLatestBoard(VERSION_CODE);
+          if (cancelled) return;
+          if (boardRes.data) {
+            setBoard(boardRes.data);
+            setPhase("board");
+            return;
+          }
+        } catch {
+          // no board either — fall through to the real error below
         }
         setPhase("error");
         setErrorMessage(
@@ -572,6 +600,34 @@ function ScreeningPageInner() {
           <div className="mh-tracker">
             <span>{Math.min(index + 1, items.length)}</span>
             <small>/{items.length}</small>
+          </div>
+          <div className="mh-bar-batt">
+            <svg width="52" height="26" viewBox="0 0 150 74">
+              <rect
+                x="3"
+                y="8"
+                width="128"
+                height="58"
+                rx="14"
+                fill="rgba(0,0,0,.35)"
+                stroke="#fff"
+                strokeWidth="3"
+              />
+              <rect x="134" y="26" width="11" height="22" rx="4" fill="#fff" />
+              <rect
+                x="10"
+                y="15"
+                width={Math.round(111 * (battPct / 100))}
+                height="44"
+                rx="8"
+                fill={scrColor(battPct)}
+                style={{
+                  transition:
+                    "width .55s cubic-bezier(.34,1.56,.64,1), fill .45s ease",
+                }}
+              />
+            </svg>
+            <span>{battPct}%</span>
           </div>
         </div>
         <div className="mh-strip">

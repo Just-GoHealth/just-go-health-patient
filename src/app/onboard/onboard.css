@@ -3,8 +3,11 @@
    mock's fixed pixel values. */
 
 .photo-circle {
-  width: clamp(150px, 26vw, 230px);
-  height: clamp(150px, 26vw, 230px);
+  /* sized off the SMALLER of viewport width/height - a vw-only size looks
+     fine on a narrow phone but never shrinks on a wide-but-short laptop
+     window, which is exactly what pushed the Next button below the fold */
+  width: clamp(120px, min(24vw, 26vh), 200px);
+  height: clamp(120px, min(24vw, 26vh), 200px);
   border-radius: 50%;
   border: 1.65px dashed rgba(232, 212, 173, 0.5);
   background: rgba(255, 255, 255, 0.02);

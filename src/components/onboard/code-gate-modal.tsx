@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { AnimatePresence, motion } from "motion/react";
-import type { RefObject } from "react";
+import { useEffect, type RefObject } from "react";
 
 export function CodeGateModal({
   open,
@@ -23,6 +23,13 @@ export function CodeGateModal({
   onCodeChange: (i: number, raw: string) => void;
   onClose: () => void;
 }) {
+  // land on the first box the moment the modal opens — no click required
+  useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(() => codeRefs.current[0]?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [open, codeRefs]);
+
   return (
     <AnimatePresence>
       {open && (

@@ -29,7 +29,6 @@ export function DomeTile({
   section,
   open,
   hidden,
-  order,
   staggerIndex,
   onToggle,
   onGetCare,
@@ -38,7 +37,6 @@ export function DomeTile({
   section: BoardSection;
   open: boolean;
   hidden: boolean;
-  order: number;
   staggerIndex: number;
   onToggle: () => void;
   onGetCare: () => void;
@@ -64,14 +62,14 @@ export function DomeTile({
       data-dome-slot
       style={
         {
-          order,
           "--dome-stagger": open ? "0px" : (STAGGER_Y[staggerIndex] ?? "0px"),
         } as CSSProperties
       }
       className={cn(
         "flex w-full max-w-[420px] flex-col items-stretch justify-self-center transition-[opacity,transform] duration-300 ease-out",
         "sm:[transform:translateY(var(--dome-stagger))]",
-        hidden && "pointer-events-none opacity-0",
+        // fully removed from layout (not faded) — see dome-board.tsx for why
+        hidden && "hidden",
       )}
     >
       <button

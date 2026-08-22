@@ -8,12 +8,16 @@ export function CustomSelect({
   options,
   placeholder,
   className,
+  defaultScrollValue,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: string[];
   placeholder: string;
   className?: string;
+  // where to land when nothing is selected yet, if the array midpoint isn't
+  // a good guess (e.g. a birth-year list, where the middle skews too old)
+  defaultScrollValue?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -29,20 +33,28 @@ export function CustomSelect({
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  // land on the selected option if there is one; otherwise open somewhere
-  // near the middle of the list instead of the very top. This list is used
-  // for birth year among other things, and nobody filling this out today
-  // was born in the years sitting at the top of that list.
+  // land on the selected option if there is one; otherwise on
+  // defaultScrollValue if the caller gave us one, otherwise near the middle
+  // of the list instead of the very top. This list is used for birth year
+  // among other things, and nobody filling this out today was born in the
+  // years sitting at the top of that list.
   useEffect(() => {
     if (!open) return;
     const list = listRef.current;
     if (!list) return;
     const selectedIndex = value ? options.indexOf(value) : -1;
+    const defaultIndex = defaultScrollValue
+      ? options.indexOf(defaultScrollValue)
+      : -1;
     const targetIndex =
-      selectedIndex >= 0 ? selectedIndex : Math.floor(options.length / 2);
+      selectedIndex >= 0
+        ? selectedIndex
+        : defaultIndex >= 0
+          ? defaultIndex
+          : Math.floor(options.length / 2);
     const target = list.children[targetIndex] as HTMLElement | undefined;
     target?.scrollIntoView({ block: "center" });
-  }, [open, value, options]);
+  }, [open, value, options, defaultScrollValue]);
 
   return (
     <div ref={ref} className={`relative min-w-0 ${className ?? ""}`}>

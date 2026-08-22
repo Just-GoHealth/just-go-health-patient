@@ -1,22 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import type { BoardSection } from "@/lib/api";
 import { DomeTile } from "./dome-tile";
-
-// generalizes the dwen-wo-ho provider board's fixed 3-item order table to any
-// section count: the open tile always lands in the middle grid column, and
-// the others keep their original relative left-to-right order around it
-function computeOrder(n: number, openIndex: number | null, idx: number): number {
-  if (openIndex == null || n < 3) return idx;
-  const mid = Math.floor((n - 1) / 2);
-  if (idx === openIndex) return mid;
-  const others = Array.from({ length: n }, (_, i) => i).filter(
-    (i) => i !== openIndex,
-  );
-  const pos = others.indexOf(idx);
-  return pos < mid ? pos : pos + 1;
-}
 
 export function DomeBoard({
   sections,
@@ -33,6 +20,7 @@ export function DomeBoard({
   const [openIndex, setOpenIndex] = useState<number | null>(
     emergencyIndex >= 0 ? emergencyIndex : null,
   );
+  const isOpen = openIndex !== null;
 
   if (!sections.length) return null;
 
@@ -50,16 +38,29 @@ export function DomeBoard({
           Tap a dome to see every answer behind it.
         </p>
       )}
-      <div className="grid w-full max-w-[1600px] grid-cols-1 items-start gap-6 px-4 sm:grid-cols-3 sm:gap-8 sm:px-10">
+      <div
+        className={cn(
+          "grid w-full max-w-[1600px] items-start gap-6 px-4 sm:gap-8 sm:px-10",
+          // with one open, collapse to a single centered column so the open
+          // dome always lands dead-center regardless of how many sections
+          // there are — a fixed 3-column grid otherwise leaves genuinely
+          // empty columns (and an off-center dome) whenever there are fewer
+          // than 3 sections, e.g. some T-3 boards
+          isOpen ? "grid-cols-1 justify-items-center" : "grid-cols-1",
+          !isOpen && sections.length >= 3 && "sm:grid-cols-3",
+          !isOpen && sections.length === 2 && "sm:grid-cols-2",
+        )}
+      >
         {sections.map((section, idx) => {
-          const isOpen = openIndex === idx;
+          const open = openIndex === idx;
           return (
             <DomeTile
               key={section.key ?? idx}
               section={section}
-              open={isOpen}
-              hidden={openIndex !== null && !isOpen}
-              order={computeOrder(sections.length, openIndex, idx)}
+              open={open}
+              // fully removed from layout (not just faded) when something
+              // else is open, so the open tile's single column truly centers
+              hidden={isOpen && !open}
               staggerIndex={idx}
               onToggle={() =>
                 setOpenIndex((prev) => (prev === idx ? null : idx))

@@ -20,6 +20,24 @@ body {
   color: var(--color-txt);
 }
 
+:root {
+  /* the one warm background every authenticated in-app screen shares
+     (onboarding, the battery check, the result board, the day view) — a
+     single shared value so it can't quietly go missing on just one page
+     again. The public landing page intentionally does NOT use this. */
+  --gradient-warm-app: radial-gradient(
+    118% 86% at 50% 16%,
+    #733730 0%,
+    #572621 42%,
+    #3b1a17 74%,
+    #2b1210 100%
+  );
+}
+
+.app-warm-bg {
+  background: var(--gradient-warm-app);
+}
+
 /* the receipts leak - little confessions drifting up off the button.
    Ported 1:1 from the legacy .sec / @keyframes secUp rules. */
 @keyframes secUp {

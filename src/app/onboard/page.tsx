@@ -114,6 +114,12 @@ function smartName(raw: string): string {
   return v;
 }
 
+// nicknames are letters, numbers, and underscores only - no spaces or
+// punctuation, so they're safe to use as a handle-like display name
+function sanitizeNickname(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9_]/g, "");
+}
+
 // no real crest/banner from the backend for this campus - a plain warm
 // gradient in the app's own palette, not a fabricated crest
 const CAMPUS_FALLBACK_BG =
@@ -502,6 +508,14 @@ function OnboardPageInner() {
     const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [resendIn]);
+
+  // land on the first OTP box the moment this step is reached — the whole
+  // point of a 6-digit code is typing it immediately, no click required
+  useEffect(() => {
+    if (step !== "verify") return;
+    const raf = requestAnimationFrame(() => otpRefs.current[0]?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, [step]);
 
   useEffect(() => {
     if (step !== "campus") return;
@@ -991,7 +1005,9 @@ function OnboardPageInner() {
       <PhotoTestimonialPanel className="h-full w-[40%]" />
 
       <div
-        className="relative flex flex-1 flex-col overflow-y-auto px-8 py-10 sm:px-16"
+        className={`relative flex flex-1 flex-col overflow-y-auto px-8 sm:px-16 ${
+          step === "photo" ? "py-4" : "py-10"
+        }`}
         style={{
           background:
             "radial-gradient(118% 86% at 50% 16%, #733730 0%, #572621 42%, #3b1a17 74%, #2b1210 100%)",
@@ -1011,9 +1027,9 @@ function OnboardPageInner() {
         </div>
 
         <div
-          className={`mx-auto flex w-full flex-1 flex-col justify-center py-10 ${
+          className={`mx-auto flex w-full flex-1 flex-col justify-center ${
             step === "campus" ? "max-w-none" : "max-w-md"
-          }`}
+          } ${step === "photo" ? "py-4" : "py-10"}`}
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -1148,7 +1164,9 @@ function OnboardPageInner() {
                         className={inputClass}
                         placeholder="What should we call you?"
                         value={nickname}
-                        onChange={(e) => setNickname(e.target.value)}
+                        onChange={(e) =>
+                          setNickname(sanitizeNickname(e.target.value))
+                        }
                       />
                     </Field>
                     <Field label="Gender">
@@ -1191,6 +1209,7 @@ function OnboardPageInner() {
                           value={dobYear}
                           onChange={setDobYear}
                           options={YEARS}
+                          defaultScrollValue="2005"
                         />
                       </div>
                     </Field>
@@ -1320,13 +1339,13 @@ function OnboardPageInner() {
                 <div className="flex flex-col items-center text-center">
                   <h1
                     className="font-extrabold tracking-tight"
-                    style={{ fontSize: "clamp(1.75rem, 4.5vw, 3rem)" }}
+                    style={{ fontSize: "clamp(1.5rem, 4vw, 2.25rem)" }}
                   >
                     Add A Photo
                   </h1>
                   <p
-                    className="text-muted mt-2"
-                    style={{ fontSize: "clamp(0.95rem, 1.6vw, 1.15rem)" }}
+                    className="text-muted mt-1"
+                    style={{ fontSize: "clamp(0.9rem, 1.5vw, 1.05rem)" }}
                   >
                     A quick photo so we know it&apos;s you,{" "}
                     <strong className="text-txt">{nickname || "there"}</strong>
@@ -1341,7 +1360,7 @@ function OnboardPageInner() {
                     onChange={handlePhotoChange}
                   />
 
-                  <div className="mt-6 flex flex-col items-center gap-[22px]">
+                  <div className="mt-4 flex flex-col items-center gap-[14px]">
                     <button
                       type="button"
                       onClick={pickPhoto}
@@ -1438,7 +1457,7 @@ function OnboardPageInner() {
                         No schools found.
                       </p>
                     )}
-                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                       {campuses.map((c) => {
                         const bgUrl = c.logo ?? c.bannerPhoto;
                         return (
@@ -1517,6 +1536,11 @@ function OnboardPageInner() {
                             >
                               {c.fullName ?? c.nickname}
                             </div>
+                            {c.fullName && c.nickname && c.nickname !== c.fullName && (
+                              <div className="text-sm text-white/70 italic">
+                                {c.nickname}
+                              </div>
+                            )}
                           </div>
 
                           {pickingCampusId === c.campusId && (

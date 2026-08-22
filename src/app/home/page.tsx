@@ -105,14 +105,14 @@ function HomePageInner() {
 
   if (loading) {
     return (
-      <div className="bg-ink text-txt flex min-h-screen items-center justify-center">
+      <div className="app-warm-bg text-txt flex min-h-screen items-center justify-center">
         <div className="border-gold/30 border-t-gold size-10 animate-spin rounded-full border-4" />
       </div>
     );
   }
 
   return (
-    <div className="bg-ink text-txt relative flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
+    <div className="app-warm-bg text-txt relative flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
       <button
         type="button"
         onClick={() => setConfirmOpen(true)}
