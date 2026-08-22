@@ -545,21 +545,15 @@ function OnboardPageInner() {
       const res = await checkContact(contactType, value);
       setContactValue(value);
       if (res.data?.exists) {
-        // we already know this exact account never finished verifying (they
-        // left before entering the OTP) — resume straight there instead of
-        // asking for a password, since an unverified account can't sign in
-        if (res.data.userId && res.data.userId === userId && otpReference) {
-          try {
-            const otpRes = await sendOtp(userId);
-            setOtpReference(otpRes.data?.otpReference ?? otpReference);
-            setResendIn(otpRes.data?.expiresInSeconds ?? 57);
-            setStep("verify");
-            return;
-          } catch {
-            // couldn't refresh the OTP — fall through to sign-in, which
-            // still resolves correctly if the account really is unverified
-          }
-        }
+        // always go through sign-in rather than guessing from locally-cached
+        // userId/otpReference - that shortcut used to resend an OTP for
+        // whatever account matched local state, which broke the moment that
+        // account got verified elsewhere in the meantime ("Account is
+        // already verified. Please sign in."). Sign-in's own nextStep
+        // handling already covers both real outcomes correctly: an
+        // unverified account gets a *fresh* otpReference and lands on
+        // "verify" (see submitSignin), and a verified, already-enrolled
+        // account is routed straight past onboarding via routeByNextStep.
         setUserId(res.data.userId ?? "");
         setSigninNickname(res.data.nickname ?? "there");
         setStep("signin");
