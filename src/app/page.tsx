@@ -63,7 +63,7 @@ export default function Home() {
         transition={{ duration: 11, ease: [0.16, 0.84, 0.34, 1] }}
       >
         <Image
-          src="/images/nsmqbg.webp"
+          src="/images/landing_bg.jpeg"
           alt=""
           fill
           priority

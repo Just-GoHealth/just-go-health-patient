@@ -24,9 +24,32 @@ type ErrorEnvelope = {
   message?: string;
 };
 
+// a bare 401 can mean "the access token just expired", not "not signed in" -
+// the guide's protocol is to refresh once and retry transparently before
+// treating it as a real sign-out. Deduped so concurrent 401s in the same
+// moment (e.g. several requests firing on a page mount) share one refresh
+// instead of racing multiple refresh-token calls.
+let refreshInFlight: Promise<boolean> | null = null;
+
+function refreshAccessToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch("/api/v1/patients/auth/refresh-token", {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+}
+
 async function apiFetch<T>(
   path: string,
   init?: RequestInit,
+  isRetryAfterRefresh = false,
 ): Promise<ApiResponse<T>> {
   // FormData needs the browser to set its own multipart boundary — forcing
   // a JSON content-type here would send the file as a broken request
@@ -34,12 +57,26 @@ async function apiFetch<T>(
     typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(`/api${path}`, {
     ...init,
-    credentials: "same-origin",
+    credentials: "include",
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...init?.headers,
     },
   });
+
+  // auth/* covers contact-check, signup, otp, signin, and refresh-token
+  // itself - none of those should ever trigger a refresh-and-retry loop,
+  // since a 401 there means something else (or would recurse forever)
+  if (
+    res.status === 401 &&
+    !isRetryAfterRefresh &&
+    !path.startsWith("/v1/patients/auth/")
+  ) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      return apiFetch<T>(path, init, true);
+    }
+  }
 
   const body = (await res.json().catch(() => ({}))) as ApiResponse<T> & {
     data?: ErrorEnvelope;
@@ -73,6 +110,10 @@ function get<T>(path: string) {
   return apiFetch<T>(path, { method: "GET" });
 }
 
+function del<T>(path: string) {
+  return apiFetch<T>(path, { method: "DELETE" });
+}
+
 function postForm<T>(path: string, formData: FormData) {
   return apiFetch<T>(path, { method: "POST", body: formData });
 }
@@ -83,7 +124,7 @@ export type ContactCheckResponse = {
   exists?: boolean;
   userId?: string;
   nickname?: string;
-  nextStep?: string;
+  nextStep?: "SIGN_IN" | "CREATE_ACCOUNT";
 };
 
 export function checkContact(type: ContactType, value: string) {
@@ -122,6 +163,38 @@ export function verifyOtp(otpReference: string, code: string) {
   return post<OtpVerifyResponse>("/v1/patients/auth/otp/verify", {
     otpReference,
     code,
+  });
+}
+
+export type ForgotPasswordResponse = {
+  otpReference?: string;
+  nextStep?: string;
+};
+
+// sends a recovery OTP to the contact. The code it produces is verified
+// through the SAME endpoint as a normal signup OTP (verifyOtp above) — for
+// a recovery otpReference, that endpoint returns only
+// { verified, passwordResetToken, nextStep: "NEW_PASSWORD" }, no cookies.
+export function forgotPassword(contact: string) {
+  return post<ForgotPasswordResponse>("/v1/patients/auth/password/forgot", {
+    contact,
+  });
+}
+
+export type SetPasswordResponse = {
+  success?: boolean;
+  nextStep?: string;
+};
+
+export function setPassword(
+  passwordResetToken: string,
+  password: string,
+  confirmPassword: string,
+) {
+  return put<SetPasswordResponse>("/v1/patients/auth/password", {
+    passwordResetToken,
+    password,
+    confirmPassword,
   });
 }
 
@@ -201,6 +274,13 @@ export function getLockinVersion(versionCode: string) {
   );
 }
 
+// public, no auth - the version-picker landing list (§3). This app currently
+// only ever shows nsmq2026 directly rather than a picker, so nothing calls
+// this yet, but it's part of the documented contract
+export function getLockinVersions() {
+  return get<LockinVersionResponse[]>("/v1/lockin-versions");
+}
+
 export function uploadProfilePhoto(photo: Blob) {
   const formData = new FormData();
   formData.append("photo", photo, "photo.jpg");
@@ -245,7 +325,7 @@ export type CampusPickerItem = {
   memberCount?: number;
   scheduledAt?: string;
   whenLabel?: string;
-  state?: string;
+  state?: "today" | "tomorrow" | "future" | "out";
 };
 
 export function getVersionCampuses(versionCode: string, q?: string) {
@@ -266,6 +346,16 @@ export function selectVersionCampus(versionCode: string, campusId: number) {
   return put<SelectCampusResponse>(
     `/v1/patients/versions/${encodeURIComponent(versionCode)}/campus`,
     { campusId },
+  );
+}
+
+// call when the student backs out of the code modal to browse other
+// schools - without this the server still has the old campus recorded, so
+// nextStep keeps resuming at ACCESS_CODE for that campus instead of letting
+// them land back on the picker
+export function deleteVersionCampus(versionCode: string) {
+  return del<{ nextStep?: string }>(
+    `/v1/patients/versions/${encodeURIComponent(versionCode)}/campus`,
   );
 }
 
@@ -313,12 +403,29 @@ export const JOIN_ERROR_COPY: Record<string, string> = {
   TOO_MANY_ATTEMPTS: "Too many attempts. Please wait a while and try again.",
 };
 
+export type EnrollmentSummary = {
+  versionCode?: string;
+  versionLabel?: string;
+  status?: string; // PENDING | ACTIVE | SUSPENDED
+  nextStep?: string; // where THIS version would resume, not what to do now
+};
+
+// lists every version the patient takes part in - e.g. to render "you have
+// a paused UG Law run" alongside the active one. Not wired into any UI yet,
+// since this app currently only ever operates on nsmq2026 directly
+export function getEnrollments() {
+  return get<EnrollmentSummary[]>("/v1/patients/enrollments");
+}
+
 export function activateEnrollment(versionCode: string) {
   return post<{ nextStep?: string }>(
     `/v1/patients/enrollments/${encodeURIComponent(versionCode)}/activate`,
   );
 }
 
+// the three canonical fields (§1.5) - status/tool supersede the legacy
+// category/currentWindow/screeningTool naming. currentWindow is kept for
+// existing display code; new logic should prefer status/tool.
 export type MembershipResponse = {
   teamId?: number;
   campusId?: number;
@@ -328,6 +435,9 @@ export type MembershipResponse = {
   versionCode?: string;
   versionLabel?: string;
   currentWindow?: string;
+  status?: "TOMORROW" | "TODAY" | "OUT";
+  tool?: "D1" | "T3" | "TPLUS";
+  internalReason?: string;
   countdown?: CountdownResponse;
   screeningDue?: boolean;
   openScreeningId?: string;
@@ -366,7 +476,9 @@ export type ScreeningRun = {
   window?: string; // PRE_LONG | PRE_SHORT | POST
   label?: string;
   heading?: string;
-  status?: string;
+  publicStatus?: "TOMORROW" | "TODAY" | "OUT"; // §1.5 canonical status
+  tool?: "D1" | "T3" | "TPLUS"; // §1.5 canonical tool
+  status?: string; // run status, e.g. IN_PROGRESS - distinct from publicStatus
   countdown?: CountdownResponse;
   answered?: number;
   total?: number;
@@ -433,6 +545,18 @@ export type ScreeningBoard = {
   head?: string;
   at?: string;
   school?: string;
+  publicStatus?: "TOMORROW" | "TODAY" | "OUT"; // §1.5 canonical status
+  tool?: "D1" | "T3" | "TPLUS"; // §1.5 canonical tool
+  // triage - server-decided, never recompute these client-side (§9)
+  tag?: "911" | "NOW" | "ASAP";
+  reasonCode?: string; // stable, machine-readable first-match rule
+  reason?: string; // display copy for reasonCode - may change, don't key logic on it
+  load?: number;
+  peak?: number;
+  cross?: number | null;
+  // true when a T-3 run's carried D-1 gmh context is missing - a visible
+  // data-quality flag, not an instruction to fabricate/backfill it
+  carriedContextMissing?: boolean;
   emergency?: boolean;
   careAcknowledged?: boolean;
   sections?: BoardSection[];

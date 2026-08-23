@@ -23,12 +23,15 @@ import {
   type ContactType,
   activateEnrollment,
   checkContact,
+  deleteVersionCampus,
+  forgotPassword,
   getLockinVersion,
   getVersionCampuses,
   getVersionMembership,
   joinVersionTeam,
   selectVersionCampus,
   sendOtp,
+  setPassword as setPasswordApi,
   signin,
   signup,
   skipProfilePhoto,
@@ -46,6 +49,8 @@ type Step =
   | "verify"
   | "photo"
   | "signin"
+  | "forgotVerify"
+  | "resetPassword"
   | "campus"
   | "code"
   | "done";
@@ -200,6 +205,8 @@ const PROGRESS: Record<Step, number> = {
   verify: 30,
   photo: 52,
   signin: 15,
+  forgotVerify: 15,
+  resetPassword: 15,
   campus: 65,
   code: 80,
   done: 100,
@@ -264,6 +271,12 @@ function OnboardPageInner() {
   const [showPassword, setShowPassword] = useState(false);
 
   const [signinPassword, setSigninPassword] = useState("");
+
+  const [passwordResetToken, setPasswordResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   const [otpReference, setOtpReference] = useState("");
   const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
@@ -670,6 +683,100 @@ function OnboardPageInner() {
     }
   }
 
+  // recovery: "Forgot your password?" on the sign-in step
+  async function submitForgotPassword() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await forgotPassword(contactValue);
+      setOtpReference(res.data?.otpReference ?? "");
+      setOtp(Array(6).fill(""));
+      setResendIn(57);
+      setStep("forgotVerify");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // recovery resend can't reuse resendOtp() - that re-sends via userId, which
+  // this (possibly signed-out) flow never has. Re-request a recovery OTP
+  // against the contact instead.
+  async function resendForgotOtp() {
+    if (resendIn > 0) return;
+    setLoading(true);
+    try {
+      const res = await forgotPassword(contactValue);
+      setOtpReference(res.data?.otpReference ?? otpReference);
+      setResendIn(57);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't resend the code");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // reuses the same OTP-verify endpoint as completeVerify, but a recovery
+  // otpReference returns only a passwordResetToken - no cookies, no
+  // nextStep routing, since this account isn't being signed in here.
+  async function completeForgotVerify(fullCode: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await verifyOtp(otpReference, fullCode);
+      if (res.data?.passwordResetToken) {
+        setPasswordResetToken(res.data.passwordResetToken);
+        setStep("resetPassword");
+      } else {
+        setError("That code didn't work");
+        setOtp(Array(6).fill(""));
+        otpRefs.current[0]?.focus();
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "That code didn't work");
+      setOtp(Array(6).fill(""));
+      otpRefs.current[0]?.focus();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const newPasswordRules = {
+    length: newPassword.length >= 6,
+    letter: /[A-Za-z]/.test(newPassword),
+    number: /[0-9]/.test(newPassword),
+  };
+
+  async function submitResetPassword() {
+    if (
+      !newPasswordRules.length ||
+      !newPasswordRules.letter ||
+      !newPasswordRules.number
+    ) {
+      setError("Password needs 6+ characters, a letter, and a number.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await setPasswordApi(passwordResetToken, newPassword, confirmNewPassword);
+      setSigninPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordResetToken("");
+      setStep("signin");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleOtpChange(i: number, raw: string) {
     const v = raw.replace(/\D/g, "").slice(0, 1);
     const next = [...otp];
@@ -677,7 +784,11 @@ function OnboardPageInner() {
     setOtp(next);
     if (v && i < otp.length - 1) otpRefs.current[i + 1]?.focus();
     if (next.every((c) => c) && next.join("").length === otp.length) {
-      completeVerify(next.join(""));
+      if (step === "forgotVerify") {
+        completeForgotVerify(next.join(""));
+      } else {
+        completeVerify(next.join(""));
+      }
     }
   }
 
@@ -796,6 +907,25 @@ function OnboardPageInner() {
     } finally {
       setLoading(false);
       setPickingCampusId(null);
+    }
+  }
+
+  // per the guide: DELETE the recorded campus choice when they back out of
+  // the code modal, so nextStep doesn't keep resuming at ACCESS_CODE for a
+  // school they backed away from browsing
+  async function backOutOfCodeModal() {
+    setCodeModalOpen(false);
+    if (devJumpStep) {
+      setSelectedCampus(null);
+      return;
+    }
+    try {
+      await deleteVersionCampus(VERSION_CODE);
+    } catch {
+      // best-effort - if this fails the server still has the old campus
+      // recorded, but picking a school again on the next visit re-PUTs it
+    } finally {
+      setSelectedCampus(null);
     }
   }
 
@@ -918,6 +1048,12 @@ function OnboardPageInner() {
       case "verify":
         setStep(userId && signinNickname ? "signin" : "signup");
         return;
+      case "forgotVerify":
+        setStep("signin");
+        return;
+      case "resetPassword":
+        setStep("forgotVerify");
+        return;
       case "photo":
         setStep("verify");
         return;
@@ -966,6 +1102,18 @@ function OnboardPageInner() {
           enabled: !loading && signinPassword.length > 0,
           label: loading ? "Signing in…" : "Sign In",
           onClick: submitSignin,
+        };
+      case "resetPassword":
+        // recovery, like sign-in, isn't part of the linear sequence - no
+        // percentage on this button either.
+        return {
+          show: true,
+          enabled:
+            !loading &&
+            newPassword.length > 0 &&
+            confirmNewPassword.length > 0,
+          label: loading ? "Saving…" : "Save password",
+          onClick: submitResetPassword,
         };
       case "photo":
         // matches the mock: always "Next" — skipping when no photo was
@@ -1330,6 +1478,148 @@ function OnboardPageInner() {
                         onChange={(e) => setSigninPassword(e.target.value)}
                       />
                     </Field>
+                    <div className="-mt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={submitForgotPassword}
+                        disabled={loading}
+                        className="text-muted hover:text-txt text-xs font-semibold disabled:opacity-60"
+                      >
+                        Forgot your password?
+                      </button>
+                    </div>
+                    {error && <p className="text-no text-sm">{error}</p>}
+                  </form>
+                </div>
+              )}
+
+              {step === "forgotVerify" && (
+                <div className="text-center">
+                  <h1 className="text-3xl font-extrabold tracking-tight">
+                    Enter account recovery code
+                  </h1>
+                  <p className="text-muted mt-2">
+                    A 6-digit recovery code was just sent to
+                    <br />
+                    <strong className="text-txt">{contactValue}</strong>
+                  </p>
+                  <div className="mt-6 flex justify-center gap-[1.5vw] sm:gap-2">
+                    {otp.map((v, i) => (
+                      <input
+                        key={i}
+                        ref={(el) => {
+                          otpRefs.current[i] = el;
+                        }}
+                        className="border-line text-txt focus:border-gold/60 aspect-[4/5] rounded-xl border bg-white/5 text-center font-bold outline-none"
+                        style={{
+                          width: "clamp(32px, 11vw, 44px)",
+                          fontSize: "clamp(16px, 4.5vw, 20px)",
+                        }}
+                        maxLength={1}
+                        inputMode="numeric"
+                        value={v}
+                        onChange={(e) => handleOtpChange(i, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Backspace" && !v && i > 0) {
+                            otpRefs.current[i - 1]?.focus();
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                  {error && <p className="text-no mt-4 text-sm">{error}</p>}
+                  <button
+                    type="button"
+                    onClick={resendForgotOtp}
+                    disabled={resendIn > 0 || loading}
+                    className="text-muted mt-6 text-sm font-medium disabled:opacity-60"
+                  >
+                    {resendIn > 0
+                      ? `Resend code in 0:${String(resendIn).padStart(2, "0")}`
+                      : "Resend code"}
+                  </button>
+                </div>
+              )}
+
+              {step === "resetPassword" && (
+                <div>
+                  <h1 className="text-3xl font-extrabold tracking-tight">
+                    Create New Password
+                  </h1>
+                  <p className="text-muted mt-2">
+                    Set new password for your account{" "}
+                    <strong className="text-txt">{contactValue}</strong>
+                  </p>
+                  <form
+                    className="mt-6 flex flex-col gap-5"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      submitResetPassword();
+                    }}
+                  >
+                    <Field label="New password">
+                      <div className="relative">
+                        <input
+                          className={inputClass}
+                          type={showNewPassword ? "text" : "password"}
+                          placeholder="Create a new password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword((s) => !s)}
+                          className="text-muted absolute top-1/2 right-3 -translate-y-1/2 text-xs font-bold"
+                        >
+                          {showNewPassword ? "HIDE" : "SHOW"}
+                        </button>
+                      </div>
+                      <ul className="mt-1 flex flex-wrap gap-3 text-xs">
+                        {[
+                          ["length", "6+ characters"],
+                          ["letter", "One letter"],
+                          ["number", "One number"],
+                        ].map(([key, label]) => (
+                          <li
+                            key={key}
+                            className={
+                              newPasswordRules[
+                                key as keyof typeof newPasswordRules
+                              ]
+                                ? "text-yes"
+                                : "text-muted"
+                            }
+                          >
+                            {newPasswordRules[
+                              key as keyof typeof newPasswordRules
+                            ]
+                              ? "✓ "
+                              : "· "}
+                            {label}
+                          </li>
+                        ))}
+                      </ul>
+                    </Field>
+                    <Field label="Confirm password">
+                      <div className="relative">
+                        <input
+                          className={inputClass}
+                          type={showConfirmNewPassword ? "text" : "password"}
+                          placeholder="Re-enter your new password"
+                          value={confirmNewPassword}
+                          onChange={(e) =>
+                            setConfirmNewPassword(e.target.value)
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmNewPassword((s) => !s)}
+                          className="text-muted absolute top-1/2 right-3 -translate-y-1/2 text-xs font-bold"
+                        >
+                          {showConfirmNewPassword ? "HIDE" : "SHOW"}
+                        </button>
+                      </div>
+                    </Field>
                     {error && <p className="text-no text-sm">{error}</p>}
                   </form>
                 </div>
@@ -1619,7 +1909,7 @@ function OnboardPageInner() {
         codeMessage={codeMessage}
         codeRefs={codeRefs}
         onCodeChange={handleCodeChange}
-        onClose={() => setCodeModalOpen(false)}
+        onClose={backOutOfCodeModal}
       />
     </div>
   );
