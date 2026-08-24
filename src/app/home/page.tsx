@@ -167,8 +167,8 @@ function HomePageInner() {
         <Image
           src="/images/logo.webp"
           alt="JustGo Health"
-          width={140}
-          height={28}
+          width={384}
+          height={67}
           className="h-6 w-auto invert"
         />
 
@@ -259,11 +259,32 @@ function HomePageInner() {
           </button>
         ) : showBoard && board ? (
           <div className="flex w-full max-w-6xl flex-1 flex-col gap-6">
+            {(board.label || board.head) && (
+              <div className="mx-auto max-w-xl text-center">
+                {board.label && (
+                  <p className="text-gold text-xs font-extrabold tracking-[0.2em] uppercase">
+                    {board.label}
+                  </p>
+                )}
+                {board.head && (
+                  <h1 className="mt-1.5 text-2xl font-bold tracking-tight sm:text-3xl">
+                    {board.head}
+                  </h1>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
+              {/* disabled - there's no backend endpoint that can give a
+                  fresh attempt at an already-submitted window. POST
+                  /patients/screenings only takes {versionCode} and its own
+                  docs say calling it again just resumes what's in
+                  progress, so clicking this used to silently re-land on
+                  this same board instead of actually retaking anything */}
               <button
                 type="button"
-                onClick={() => router.push("/screening")}
-                className="border-gold/60 text-gold hover:bg-gold/10 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide uppercase transition-colors"
+                disabled
+                title="Retaking an already-submitted check isn't available yet"
+                className="border-line text-muted inline-flex cursor-not-allowed items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide uppercase opacity-60"
               >
                 ↻ Retake Testing
               </button>
@@ -282,6 +303,7 @@ function HomePageInner() {
                 sections={board.sections ?? []}
                 onGetCare={handleCareAck}
                 ackLoading={ackLoading}
+                showInlineGetCare={false}
               />
             </div>
 

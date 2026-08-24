@@ -38,13 +38,19 @@ let inMemoryAccessToken: string | null = null;
 // alone gets through) is this in-memory copy, echoed in the same
 // signin/verify response body as accessToken
 let inMemoryRefreshToken: string | null = null;
+// set by logout(), cleared by any real successful token issuance - guards
+// against a refresh that was already in flight before logout resolving
+// afterward and quietly reinstating a session (see refreshAccessToken)
+let loggedOut = false;
 
 export function setAccessToken(token: string | null | undefined) {
   inMemoryAccessToken = token ?? null;
+  if (token) loggedOut = false;
 }
 
 export function setRefreshToken(token: string | null | undefined) {
   inMemoryRefreshToken = token ?? null;
+  if (token) loggedOut = false;
 }
 
 // a bare 401 can mean "the access token just expired", not "not signed in" -
@@ -55,6 +61,7 @@ export function setRefreshToken(token: string | null | undefined) {
 let refreshInFlight: Promise<boolean> | null = null;
 
 function refreshAccessToken(): Promise<boolean> {
+  if (loggedOut) return Promise.resolve(false);
   if (!refreshInFlight) {
     refreshInFlight = fetch("/api/v1/patients/auth/refresh-token", {
       method: "POST",
@@ -65,6 +72,11 @@ function refreshAccessToken(): Promise<boolean> {
     })
       .then(async (res) => {
         if (!res.ok) return false;
+        // logout() ran while this request was in flight - the response's
+        // own Set-Cookie already reinstated the session cookies regardless
+        // of what we do here, but at least don't also repopulate the
+        // in-memory tokens or report this as a success to retry against
+        if (loggedOut) return false;
         // the refresh response follows the same envelope and carries a
         // fresh accessToken (and often a rotated refreshToken) - capture
         // both the same way signin/verify do
@@ -313,7 +325,17 @@ export async function signin(
 // the backend has no signout endpoint (auth is entirely the __Host-* session
 // cookies signin/verify set) - this hits our own Next.js route instead of
 // the proxied backend, since only a same-origin response can expire them
-export function logout() {
+export async function logout() {
+  loggedOut = true;
+  // a token refresh from just before this logout (e.g. a background
+  // request that 401'd right as the user clicked out) can still be in
+  // flight - its response sets fresh __Host-* cookies the instant it
+  // arrives, regardless of what our JS does with it afterward. Wait for
+  // it to fully settle first so our clear below is guaranteed to be the
+  // last word, not silently overwritten moments later by a stale refresh.
+  if (refreshInFlight) {
+    await refreshInFlight.catch(() => {});
+  }
   setAccessToken(null);
   setRefreshToken(null);
   return post<{ success?: boolean }>("/logout");

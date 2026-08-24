@@ -128,8 +128,8 @@ export default function Home() {
             <Image
               src="/images/logo.webp"
               alt="JustGo Health"
-              width={140}
-              height={28}
+              width={384}
+              height={67}
               priority
               className="invert"
               style={{ height: "clamp(26px, 4vh, 36px)", width: "auto" }}

@@ -1166,8 +1166,8 @@ function OnboardPageInner() {
           <Image
             src="/images/logo.webp"
             alt="JustGo Health"
-            width={140}
-            height={28}
+            width={384}
+            height={67}
             className="h-6 w-auto invert"
           />
           <div className="land-pill whitespace-nowrap">

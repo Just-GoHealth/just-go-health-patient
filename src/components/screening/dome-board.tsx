@@ -9,10 +9,12 @@ export function DomeBoard({
   sections,
   onGetCare,
   ackLoading,
+  showInlineGetCare = true,
 }: {
   sections: BoardSection[];
   onGetCare: () => void;
   ackLoading: boolean;
+  showInlineGetCare?: boolean;
 }) {
   const emergencyIndex = sections.findIndex((s) => s.emergency);
   // the emergency dome opens by default — Get Care is never hidden behind a
@@ -67,6 +69,7 @@ export function DomeBoard({
               }
               onGetCare={onGetCare}
               ackLoading={ackLoading}
+              showInlineGetCare={showInlineGetCare}
             />
           );
         })}
