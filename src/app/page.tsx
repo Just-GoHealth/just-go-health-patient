@@ -132,7 +132,11 @@ export default function Home() {
               height={67}
               priority
               className="invert"
-              style={{ height: "clamp(26px, 4vh, 36px)", width: "auto" }}
+              style={{
+                height: "clamp(26px, 4vh, 36px)",
+                width: "auto",
+                objectFit: "contain",
+              }}
             />
           </motion.button>
 

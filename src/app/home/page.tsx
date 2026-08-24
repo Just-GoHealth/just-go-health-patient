@@ -5,12 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { DomeBoard } from "@/components/screening/dome-board";
 import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
+import { Toast, useToast } from "@/components/shared/toast";
 import {
   ApiError,
   acknowledgeCare,
+  getHomeProfile,
   getLatestBoard,
   getVersionMembership,
   logout,
+  type HomeProfileResponse,
   type MembershipResponse,
   type ScreeningBoard,
 } from "@/lib/api";
@@ -68,10 +71,14 @@ function HomePageInner() {
   const [board, setBoard] = useState<ScreeningBoard | null>(() =>
     mock === "board" ? MOCK_SCREENING_BOARD : null,
   );
+  const [profile, setProfile] = useState<HomeProfileResponse | null>(() =>
+    mock ? { nickname: "You" } : null,
+  );
   const [ackLoading, setAckLoading] = useState(false);
   const [loading, setLoading] = useState(!mock);
   const [loggingOut, setLoggingOut] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const { toast, showToast } = useToast();
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -120,6 +127,12 @@ function HomePageInner() {
       } catch {
         // non-fatal - the day view works fine with no board
       }
+      try {
+        const profRes = await getHomeProfile();
+        if (!cancelled) setProfile(profRes.data ?? null);
+      } catch {
+        // non-fatal - the logout corner just renders without a name/photo
+      }
     })();
     return () => {
       cancelled = true;
@@ -134,8 +147,10 @@ function HomePageInner() {
       // takes the board off the page and reveals the day view underneath,
       // per the product's own rule for this state (§9.2)
       setBoard(null);
+      showToast("We've opened your day. Come back whenever you're ready.");
     } catch {
       // best-effort - if this fails the board just stays up for a retry
+      showToast("Something went wrong. Please try again.");
     } finally {
       setAckLoading(false);
     }
@@ -153,6 +168,8 @@ function HomePageInner() {
 
   return (
     <div className="app-warm-bg text-txt flex min-h-screen">
+      <Toast toast={toast} />
+
       <LogoutConfirmModal
         open={confirmOpen}
         loading={loggingOut}
@@ -164,12 +181,17 @@ function HomePageInner() {
           as the screening battery's left panel but showing time-to-contest
           instead of quiz progress, since that's what's relevant here */}
       <div className="hidden w-[300px] shrink-0 flex-col justify-between border-r border-white/10 p-8 sm:flex">
+        {/* self-start: a flex-col child stretches to fill the cross axis
+            (full container width) by default, which was forcing this box
+            far wider than the logo's real ratio and letting object-fit's
+            default "fill" distort the pixels to match - the wrong width/
+            height props were a red herring, this was the actual cause */}
         <Image
           src="/images/logo.webp"
           alt="JustGo Health"
           width={384}
           height={67}
-          className="h-6 w-auto invert"
+          className="h-6 w-auto shrink-0 self-start object-contain invert"
         />
 
         <div className="flex flex-col items-center gap-4 text-center">
@@ -199,14 +221,39 @@ function HomePageInner() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setConfirmOpen(true)}
-          disabled={loggingOut}
-          className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
-        >
-          {loggingOut ? "Logging out…" : "Log out"}
-        </button>
+        {/* grouped so justify-between above treats these as one bottom
+            cluster (tightly spaced) instead of spreading the profile row
+            away from the logout button it belongs next to */}
+        <div className="flex flex-col gap-3">
+          {profile?.nickname && (
+            <div className="flex items-center gap-2.5">
+              {profile.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
+                <img
+                  src={profile.photoUrl}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="size-8 shrink-0 rounded-full object-cover"
+                />
+              ) : (
+                <div className="border-line flex size-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold uppercase">
+                  {profile.nickname.charAt(0)}
+                </div>
+              )}
+              <p className="truncate text-sm font-bold">{profile.nickname}</p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            disabled={loggingOut}
+            className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
+          >
+            {loggingOut ? "Logging out…" : "Log out"}
+          </button>
+        </div>
       </div>
 
       {/* main area */}
@@ -239,14 +286,19 @@ function HomePageInner() {
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => setConfirmOpen(true)}
-            disabled={loggingOut}
-            className="border-line hover:border-gold/60 ml-auto rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
-          >
-            {loggingOut ? "…" : "Log out"}
-          </button>
+          <div className="ml-auto flex flex-col items-end gap-1.5">
+            {profile?.nickname && (
+              <p className="truncate text-xs font-bold">{profile.nickname}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              disabled={loggingOut}
+              className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
+            >
+              {loggingOut ? "…" : "Log out"}
+            </button>
+          </div>
         </div>
 
         {membership?.screeningDue ? (
@@ -259,20 +311,11 @@ function HomePageInner() {
           </button>
         ) : showBoard && board ? (
           <div className="flex w-full max-w-6xl flex-1 flex-col gap-6">
-            {(board.label || board.head) && (
-              <div className="mx-auto max-w-xl text-center">
-                {board.label && (
-                  <p className="text-gold text-xs font-extrabold tracking-[0.2em] uppercase">
-                    {board.label}
-                  </p>
-                )}
-                {board.head && (
-                  <h1 className="mt-1.5 text-2xl font-bold tracking-tight sm:text-3xl">
-                    {board.head}
-                  </h1>
-                )}
-              </div>
-            )}
+            {/* no separate "D-1 / One day before the contest" heading here
+                on purpose - the left panel's countdown is the one timing
+                message on this page now, since board.label/head can be
+                worded inconsistently with it (real example: "Scheduled"
+                vs "One day before the contest" for the same state) */}
             <div className="flex items-center justify-between gap-3">
               {/* disabled - there's no backend endpoint that can give a
                   fresh attempt at an already-submitted window. POST

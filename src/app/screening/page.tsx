@@ -5,6 +5,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import "./screening.css";
 import { DomeBoard } from "@/components/screening/dome-board";
 import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
+import { Toast, useToast } from "@/components/shared/toast";
 import {
   ApiError,
   acknowledgeCare,
@@ -172,6 +173,8 @@ function ScreeningPageInner() {
   const [answering, setAnswering] = useState(false);
   const [board, setBoard] = useState<ScreeningBoard | null>(null);
   const [ackLoading, setAckLoading] = useState(false);
+  const [careAcked, setCareAcked] = useState(false);
+  const { toast, showToast } = useToast();
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(
     null,
   );
@@ -425,17 +428,19 @@ function ScreeningPageInner() {
   }
 
   async function handleCareAck() {
-    if (!board?.screeningId) {
-      router.push("/home");
-      return;
-    }
+    if (!board?.screeningId) return;
     setAckLoading(true);
     try {
       await acknowledgeCare(board.screeningId);
+      // Get Care steps the board aside in place - it's not a navigation
+      // action. Leaving here (to /home) is a separate, explicit choice via
+      // "Continue" below.
+      setCareAcked(true);
+      showToast("We've opened your day. Come back whenever you're ready.");
     } catch {
-      // still move on — the ack is best-effort, not a gate
+      showToast("Something went wrong. Please try again.");
     } finally {
-      router.push("/home");
+      setAckLoading(false);
     }
   }
 
@@ -508,25 +513,45 @@ function ScreeningPageInner() {
   if (phase === "board" && board) {
     return (
       <div className="board-screen">
+        <Toast toast={toast} />
         <div className="board-head">
           <p className="board-eyebrow">{board.label}</p>
           <h1 className="board-title">{board.head}</h1>
         </div>
 
-        <DomeBoard
-          sections={board.sections ?? []}
-          onGetCare={handleCareAck}
-          ackLoading={ackLoading}
-        />
+        {careAcked ? (
+          <div className="mx-auto flex max-w-[640px] flex-col items-center text-center">
+            <p className="text-txt text-lg font-bold">You&apos;re all set.</p>
+            <p className="text-muted mt-1 text-sm">
+              We&apos;ve opened your day — come back whenever you&apos;re
+              ready.
+            </p>
+            <button
+              type="button"
+              onClick={() => router.push("/home")}
+              className="land-cta-btn board-continue-btn mt-6"
+            >
+              Go to home
+            </button>
+          </div>
+        ) : (
+          <>
+            <DomeBoard
+              sections={board.sections ?? []}
+              onGetCare={handleCareAck}
+              ackLoading={ackLoading}
+            />
 
-        {!board.emergency && (
-          <button
-            type="button"
-            onClick={() => router.push("/home")}
-            className="land-cta-btn board-continue-btn"
-          >
-            Continue
-          </button>
+            {!board.emergency && (
+              <button
+                type="button"
+                onClick={() => router.push("/home")}
+                className="land-cta-btn board-continue-btn"
+              >
+                Continue
+              </button>
+            )}
+          </>
         )}
       </div>
     );

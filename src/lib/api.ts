@@ -322,9 +322,6 @@ export async function signin(
   return res;
 }
 
-// the backend has no signout endpoint (auth is entirely the __Host-* session
-// cookies signin/verify set) - this hits our own Next.js route instead of
-// the proxied backend, since only a same-origin response can expire them
 export async function logout() {
   loggedOut = true;
   // a token refresh from just before this logout (e.g. a background
@@ -336,8 +333,22 @@ export async function logout() {
   if (refreshInFlight) {
     await refreshInFlight.catch(() => {});
   }
+  const priorRefreshToken = inMemoryRefreshToken;
   setAccessToken(null);
   setRefreshToken(null);
+  // tell the real backend too, so the refresh token is actually invalidated
+  // server-side (not just dropped locally) - best-effort, the local clear
+  // below still runs regardless of whether this succeeds
+  try {
+    await post("/v1/patients/auth/logout", { refreshToken: priorRefreshToken });
+  } catch {
+    // fall through to the local cookie clear either way
+  }
+  // our own same-origin route, since __Host-prefixed cookies can only be
+  // cleared by a same-origin response - also clears plain accessToken/
+  // refreshToken cookies observed alongside the __Host- pair on a real
+  // session, which the backend's own logout response may not reach from
+  // here through the proxy
   return post<{ success?: boolean }>("/logout");
 }
 

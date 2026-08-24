@@ -68,7 +68,7 @@ export function CodeGateModal({
                   alt="JustGo Health"
                   width={384}
                   height={67}
-                  className="h-6 w-auto"
+                  className="h-6 w-auto shrink-0 self-start object-contain"
                 />
               </div>
 
