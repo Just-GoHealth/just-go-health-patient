@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   HandIcon,
   LockIcon,
@@ -15,6 +15,7 @@ import {
 import { FloatingReceipts } from "@/components/landing/floating-receipts";
 import { PrivacyGateModal } from "@/components/landing/privacy-gate-modal";
 import { ApiError, getVersionMembership } from "@/lib/api";
+import { VERSIONS_SEEN_KEY } from "@/lib/constants";
 
 const VERSION_CODE = "nsmq2026";
 
@@ -27,6 +28,19 @@ export default function Home() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [checkingSession, setCheckingSession] = useState(false);
+
+  // a first-time visitor lands on the invitation/version-picker screen
+  // instead - returning visitors (who've already picked NSMQ 2026) skip
+  // straight to this hero
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(VERSIONS_SEEN_KEY)) {
+        router.replace("/versions");
+      }
+    } catch {
+      // unavailable storage (e.g. private browsing) - just show the hero
+    }
+  }, [router]);
 
   function handleContinue() {
     setModalOpen(false);
@@ -103,7 +117,10 @@ export default function Home() {
             The Pledge
           </motion.a>
 
-          <motion.div
+          <motion.button
+            type="button"
+            onClick={() => router.push("/versions")}
+            aria-label="Switch LOCK IN version"
             initial={{ opacity: 0, y: 12, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ ...overshoot, delay: 0.2 }}
@@ -117,7 +134,7 @@ export default function Home() {
               className="invert"
               style={{ height: "clamp(26px, 4vh, 36px)", width: "auto" }}
             />
-          </motion.div>
+          </motion.button>
 
           <a
             href="https://dwen-wo-ho-nine.vercel.app/"

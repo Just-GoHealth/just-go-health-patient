@@ -1,14 +1,20 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { DomeBoard } from "@/components/screening/dome-board";
 import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
 import {
   ApiError,
+  acknowledgeCare,
+  getLatestBoard,
   getVersionMembership,
   logout,
   type MembershipResponse,
+  type ScreeningBoard,
 } from "@/lib/api";
+import { MOCK_SCREENING_BOARD } from "../screening/dev-mock";
 
 const VERSION_CODE = "nsmq2026";
 
@@ -50,11 +56,19 @@ function HomePageInner() {
   const [membership, setMembership] = useState<MembershipResponse | null>(
     () =>
       mock
-        ? mock === "empty"
+        ? mock === "empty" || mock === "board"
           ? { ...MOCK_MEMBERSHIP, screeningDue: false }
           : MOCK_MEMBERSHIP
         : null,
   );
+  // the latest result board - this page IS the day view once a board
+  // exists, not a screen you pass through on the way back from /screening.
+  // ?mock=board previews it directly (?mock=1's screeningDue:true would
+  // otherwise always show the "Take Your Check" CTA ahead of any board)
+  const [board, setBoard] = useState<ScreeningBoard | null>(() =>
+    mock === "board" ? MOCK_SCREENING_BOARD : null,
+  );
+  const [ackLoading, setAckLoading] = useState(false);
   const [loading, setLoading] = useState(!mock);
   const [loggingOut, setLoggingOut] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -97,11 +111,35 @@ function HomePageInner() {
       } finally {
         if (!cancelled) setLoading(false);
       }
+      // 204 (no board yet, or the last run was contest-day and never
+      // produces one) is a normal outcome, not an error - board just stays
+      // null and the plain countdown/CTA view below shows instead
+      try {
+        const boardRes = await getLatestBoard(VERSION_CODE);
+        if (!cancelled) setBoard(boardRes.data ?? null);
+      } catch {
+        // non-fatal - the day view works fine with no board
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [router, mock]);
+
+  async function handleCareAck() {
+    if (!board?.screeningId) return;
+    setAckLoading(true);
+    try {
+      await acknowledgeCare(board.screeningId);
+      // takes the board off the page and reveals the day view underneath,
+      // per the product's own rule for this state (§9.2)
+      setBoard(null);
+    } catch {
+      // best-effort - if this fails the board just stays up for a retry
+    } finally {
+      setAckLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -111,17 +149,10 @@ function HomePageInner() {
     );
   }
 
-  return (
-    <div className="app-warm-bg text-txt relative flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center">
-      <button
-        type="button"
-        onClick={() => setConfirmOpen(true)}
-        disabled={loggingOut}
-        className="border-line hover:border-gold/60 absolute top-6 right-6 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
-      >
-        {loggingOut ? "Logging out…" : "Log out"}
-      </button>
+  const showBoard = !membership?.screeningDue && !!board?.sections?.length;
 
+  return (
+    <div className="app-warm-bg text-txt flex min-h-screen">
       <LogoutConfirmModal
         open={confirmOpen}
         loading={loggingOut}
@@ -129,48 +160,139 @@ function HomePageInner() {
         onConfirm={handleLogout}
       />
 
-      <div className="flex items-center gap-3">
-        {membership?.campusLogo && (
-          // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
-          <img
-            src={membership.campusLogo}
-            alt=""
-            width={44}
-            height={44}
-            className="size-11 rounded-full object-cover"
-          />
-        )}
-        <div className="text-left">
-          <p className="font-bold">{membership?.campusName ?? "Your team"}</p>
-          {membership?.currentWindow && (
-            <p className="text-muted text-xs">{membership.currentWindow}</p>
+      {/* left panel - persists across every state of this page, same role
+          as the screening battery's left panel but showing time-to-contest
+          instead of quiz progress, since that's what's relevant here */}
+      <div className="hidden w-[300px] shrink-0 flex-col justify-between border-r border-white/10 p-8 sm:flex">
+        <Image
+          src="/images/logo.webp"
+          alt="JustGo Health"
+          width={140}
+          height={28}
+          className="h-6 w-auto invert"
+        />
+
+        <div className="flex flex-col items-center gap-4 text-center">
+          {membership?.countdown?.text && (
+            <div
+              className={`text-3xl font-extrabold ${
+                membership.countdown.soon ? "text-no" : "text-yes"
+              }`}
+            >
+              {membership.countdown.text}
+            </div>
+          )}
+          {membership?.campusName && (
+            <div className="flex flex-col items-center gap-2">
+              {membership.campusLogo && (
+                // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
+                <img
+                  src={membership.campusLogo}
+                  alt=""
+                  width={44}
+                  height={44}
+                  className="size-11 rounded-full object-cover"
+                />
+              )}
+              <p className="font-bold">{membership.campusName}</p>
+            </div>
           )}
         </div>
-      </div>
 
-      {membership?.countdown?.text && (
-        <div
-          className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 font-bold ${
-            membership.countdown.soon
-              ? "border-no/60 text-no"
-              : "border-gold/50 text-gold"
-          }`}
-        >
-          {membership.countdown.text}
-        </div>
-      )}
-
-      {membership?.screeningDue ? (
         <button
           type="button"
-          onClick={() => router.push("/screening")}
-          className="land-cta-btn"
+          onClick={() => setConfirmOpen(true)}
+          disabled={loggingOut}
+          className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
         >
-          Take Your Check
+          {loggingOut ? "Logging out…" : "Log out"}
         </button>
-      ) : (
-        <p className="text-muted">Nothing due right now — check back soon.</p>
-      )}
+      </div>
+
+      {/* main area */}
+      <div
+        className={`relative flex flex-1 flex-col items-center gap-6 px-6 py-8 text-center ${
+          showBoard ? "overflow-y-auto" : "justify-center"
+        }`}
+      >
+        {/* compact mobile-only header - the left panel above is hidden below sm */}
+        <div className="flex items-center gap-3 sm:hidden">
+          {membership?.campusLogo && (
+            // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
+            <img
+              src={membership.campusLogo}
+              alt=""
+              width={44}
+              height={44}
+              className="size-11 rounded-full object-cover"
+            />
+          )}
+          <div className="text-left">
+            <p className="font-bold">{membership?.campusName ?? "Your team"}</p>
+            {membership?.countdown?.text && (
+              <p
+                className={`text-xs font-semibold ${
+                  membership.countdown.soon ? "text-no" : "text-yes"
+                }`}
+              >
+                {membership.countdown.text}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            disabled={loggingOut}
+            className="border-line hover:border-gold/60 ml-auto rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
+          >
+            {loggingOut ? "…" : "Log out"}
+          </button>
+        </div>
+
+        {membership?.screeningDue ? (
+          <button
+            type="button"
+            onClick={() => router.push("/screening")}
+            className="land-cta-btn"
+          >
+            Take Your Check
+          </button>
+        ) : showBoard && board ? (
+          <div className="flex w-full max-w-6xl flex-1 flex-col gap-6">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => router.push("/screening")}
+                className="border-gold/60 text-gold hover:bg-gold/10 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide uppercase transition-colors"
+              >
+                ↻ Retake Testing
+              </button>
+              <button
+                type="button"
+                onClick={handleCareAck}
+                disabled={ackLoading}
+                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
+              >
+                {ackLoading ? "…" : "Get Care ♥"}
+              </button>
+            </div>
+
+            <div className="flex flex-1 items-center justify-center">
+              <DomeBoard
+                sections={board.sections ?? []}
+                onGetCare={handleCareAck}
+                ackLoading={ackLoading}
+              />
+            </div>
+
+            <p className="text-muted/70 text-xs">
+              <strong className="text-txt">Get Care</strong> opens your day.
+            </p>
+          </div>
+        ) : (
+          <p className="text-muted">Nothing due right now — check back soon.</p>
+        )}
+      </div>
     </div>
   );
 }

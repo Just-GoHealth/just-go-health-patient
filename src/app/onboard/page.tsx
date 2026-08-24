@@ -1046,16 +1046,17 @@ function OnboardPageInner() {
         setStep(contactType === "PHONE" ? "phone" : "email");
         return;
       case "verify":
+      case "photo":
+        // once the OTP is verified it's consumed server-side - "photo" can
+        // never step back into "verify" to re-enter a burned code
         setStep(userId && signinNickname ? "signin" : "signup");
         return;
       case "forgotVerify":
-        setStep("signin");
-        return;
       case "resetPassword":
-        setStep("forgotVerify");
-        return;
-      case "photo":
-        setStep("verify");
+        // same for recovery: a verified recovery OTP is one-time too -
+        // "resetPassword" skips straight back to "signin", never back
+        // through "forgotVerify"
+        setStep("signin");
         return;
       case "campus":
         setStep("photo");

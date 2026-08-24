@@ -24,6 +24,29 @@ type ErrorEnvelope = {
   message?: string;
 };
 
+// Belt-and-suspenders alongside the __Host-* cookies: the backend also
+// echoes accessToken/refreshToken in the response body specifically for
+// clients that can't rely on cookies (per the integration guide - "for
+// non-browser clients"). Kept in-memory only (never localStorage/
+// sessionStorage) - it doesn't survive a hard refresh, but that's fine
+// since cookies are still the primary mechanism; this just means a request
+// is never silently missing auth just because a cookie didn't make it
+// through some proxy/browser edge case.
+let inMemoryAccessToken: string | null = null;
+// __Host-refresh_token is HttpOnly - JS can never read the cookie's value,
+// so the only way to explicitly pass it (rather than hope the cookie
+// alone gets through) is this in-memory copy, echoed in the same
+// signin/verify response body as accessToken
+let inMemoryRefreshToken: string | null = null;
+
+export function setAccessToken(token: string | null | undefined) {
+  inMemoryAccessToken = token ?? null;
+}
+
+export function setRefreshToken(token: string | null | undefined) {
+  inMemoryRefreshToken = token ?? null;
+}
+
 // a bare 401 can mean "the access token just expired", not "not signed in" -
 // the guide's protocol is to refresh once and retry transparently before
 // treating it as a real sign-out. Deduped so concurrent 401s in the same
@@ -36,8 +59,28 @@ function refreshAccessToken(): Promise<boolean> {
     refreshInFlight = fetch("/api/v1/patients/auth/refresh-token", {
       method: "POST",
       credentials: "include",
+      headers: inMemoryRefreshToken
+        ? { Authorization: `Bearer ${inMemoryRefreshToken}` }
+        : undefined,
     })
-      .then((res) => res.ok)
+      .then(async (res) => {
+        if (!res.ok) return false;
+        // the refresh response follows the same envelope and carries a
+        // fresh accessToken (and often a rotated refreshToken) - capture
+        // both the same way signin/verify do
+        try {
+          const body = (await res.json()) as ApiResponse<{
+            accessToken?: string;
+            refreshToken?: string;
+          }>;
+          if (body.data?.accessToken) setAccessToken(body.data.accessToken);
+          if (body.data?.refreshToken) setRefreshToken(body.data.refreshToken);
+        } catch {
+          // no body or unexpected shape - the refreshed cookie is still
+          // set either way, so this isn't fatal
+        }
+        return true;
+      })
       .catch(() => false)
       .finally(() => {
         refreshInFlight = null;
@@ -60,15 +103,27 @@ async function apiFetch<T>(
     credentials: "include",
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(inMemoryAccessToken
+        ? { Authorization: `Bearer ${inMemoryAccessToken}` }
+        : {}),
       ...init?.headers,
     },
   });
 
   // auth/* covers contact-check, signup, otp, signin, and refresh-token
   // itself - none of those should ever trigger a refresh-and-retry loop,
-  // since a 401 there means something else (or would recurse forever)
+  // since a failure there means something else (or would recurse forever).
+  //
+  // Also retries on 403, not just 401: nothing in this API's documented
+  // business errors (join/assent/enrollment) ever uses 403, and real
+  // logins have been observed working right after sign-in then failing
+  // later on the exact same endpoints - consistent with this backend
+  // signaling "your token just expired" as a bare 403 on at least some
+  // routes rather than the textbook 401. Retrying costs one extra round
+  // trip on a *genuine* 403 (there isn't one in this app currently) and
+  // transparently recovers the expired-token case either way.
   if (
-    res.status === 401 &&
+    (res.status === 401 || res.status === 403) &&
     !isRetryAfterRefresh &&
     !path.startsWith("/v1/patients/auth/")
   ) {
@@ -159,11 +214,16 @@ export type OtpVerifyResponse = {
   activeVersion?: ActiveVersion;
 };
 
-export function verifyOtp(otpReference: string, code: string) {
-  return post<OtpVerifyResponse>("/v1/patients/auth/otp/verify", {
+export async function verifyOtp(otpReference: string, code: string) {
+  const res = await post<OtpVerifyResponse>("/v1/patients/auth/otp/verify", {
     otpReference,
     code,
   });
+  // absent on the recovery-flow variant (passwordResetToken instead) - this
+  // is a no-op there since accessToken/refreshToken are undefined
+  if (res.data?.accessToken) setAccessToken(res.data.accessToken);
+  if (res.data?.refreshToken) setRefreshToken(res.data.refreshToken);
+  return res;
 }
 
 export type ForgotPasswordResponse = {
@@ -232,22 +292,30 @@ export type SigninResponse = {
   activeVersion?: ActiveVersion;
 };
 
-export function signin(
+export async function signin(
   contact: string,
   password: string,
   versionCode?: string,
 ) {
-  return post<SigninResponse>("/v1/patients/auth/signin", {
+  const res = await post<SigninResponse>("/v1/patients/auth/signin", {
     contact,
     password,
     versionCode,
   });
+  // absent on the "unverified" outcome (otpReference instead, no cookies
+  // either) - this is a no-op there since accessToken/refreshToken are
+  // undefined
+  if (res.data?.accessToken) setAccessToken(res.data.accessToken);
+  if (res.data?.refreshToken) setRefreshToken(res.data.refreshToken);
+  return res;
 }
 
 // the backend has no signout endpoint (auth is entirely the __Host-* session
 // cookies signin/verify set) - this hits our own Next.js route instead of
 // the proxied backend, since only a same-origin response can expire them
 export function logout() {
+  setAccessToken(null);
+  setRefreshToken(null);
   return post<{ success?: boolean }>("/logout");
 }
 

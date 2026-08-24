@@ -548,6 +548,15 @@ function ScreeningPageInner() {
           <span className="f-sec">{current.section ?? "Mental Health"}</span>
         </div>
 
+        {/* the contest countdown - shown here regardless of whether this is
+            the student's first check or a retake, same data as the home
+            page's countdown pill */}
+        {membership?.countdown?.text && (
+          <div className="f-when">
+            <span className="f-when-pill">{membership.countdown.text}</span>
+          </div>
+        )}
+
         <div className="f-title">
           {current.shortName ?? current.name}
           {current.help && (

@@ -289,6 +289,27 @@
   color: #fff;
   white-space: nowrap;
 }
+/* the contest countdown, shown on the battery view whether this is the
+   student's first check or a retake - mirrors .f-kick but pinned right */
+.f-when {
+  position: absolute;
+  top: clamp(12px, 2vh, 26px);
+  right: clamp(20px, 3vh, 44px);
+  margin: 0;
+  z-index: 6;
+}
+.f-when-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.4em 1em;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  font-size: clamp(12.65px, 1.725vh, 16.1px);
+  white-space: nowrap;
+  background: var(--color-gold);
+  color: #2b1210;
+}
 .f-title {
   display: inline-flex;
   align-items: center;
