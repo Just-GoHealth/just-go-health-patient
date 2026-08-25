@@ -432,9 +432,18 @@ function OnboardPageInner() {
           setStep((s) =>
             s === "campus" || s === "code" || s === "done" ? s : "campus",
           );
+        } else {
+          // 401/403 means not signed in - if the restored step needs a
+          // session (photo/campus/code/done all call authenticated
+          // endpoints), send them to sign in instead of letting them hit a
+          // 403 further down the flow. routeByNextStep already resumes them
+          // at the right step once they're back in.
+          setStep((s) =>
+            s === "photo" || s === "campus" || s === "code" || s === "done"
+              ? "signin"
+              : s,
+          );
         }
-        // 401/403 means not signed in - leave them on the restored (or
-        // default) step, since there's no session to resume.
       } finally {
         if (!cancelled) setSessionChecked(true);
       }
@@ -854,6 +863,14 @@ function OnboardPageInner() {
       const res = await uploadProfilePhoto(blob);
       await routeByNextStep(res.data?.nextStep, "campus");
     } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        // session died between the earlier check and this submit - send
+        // them to sign in instead of surfacing a raw 403; routeByNextStep
+        // (via the "done" effect / a future session check) resumes them
+        // back at photo once they're re-authenticated
+        setStep("signin");
+        return;
+      }
       setError(e instanceof ApiError ? e.message : "Couldn't upload that photo");
     } finally {
       setLoading(false);
@@ -904,6 +921,10 @@ function OnboardPageInner() {
       setSelectedCampus(item);
       setCodeModalOpen(true);
     } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        setStep("signin");
+        return;
+      }
       setError(
         e instanceof ApiError ? e.message : "Couldn't select that school",
       );
@@ -970,6 +991,11 @@ function OnboardPageInner() {
         routeByNextStep(res.data?.nextStep, "done");
       }, 1100);
     } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        setCodeModalOpen(false);
+        setStep("signin");
+        return;
+      }
       const code = e instanceof ApiError ? e.code : undefined;
 
       // the assent version changed server-side since it was fetched — the
@@ -1461,7 +1487,7 @@ function OnboardPageInner() {
               {step === "signin" && (
                 <div>
                   <h1 className="text-3xl font-extrabold tracking-tight">
-                    Hello, {signinNickname}
+                    Hello, {signinNickname || nickname || "there"}
                   </h1>
                   <p className="text-muted mt-2">
                     You&apos;re signing in with{" "}
