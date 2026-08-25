@@ -5,7 +5,7 @@ const { chromium } = require("playwright");
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.addInitScript(() => {
     try {
-      localStorage.setItem("versions_seen_v1", "1");
+      localStorage.setItem("justgo_versions_seen", "1");
     } catch {}
   });
   await page.goto("http://localhost:3001/", { waitUntil: "networkidle" });
