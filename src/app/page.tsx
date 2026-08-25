@@ -101,26 +101,43 @@ export default function Home() {
 
       <div className="relative z-10 flex flex-1 flex-col">
         <motion.nav
-          className="flex items-center justify-between gap-4 p-6 sm:px-10"
+          className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-10"
           initial={{ opacity: 0, y: -16, scale: 0.94 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ ...overshoot, delay: 0.1 }}
         >
-          <motion.a
-            href="/pledge"
-            className="land-pill land-pledge"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.28, ease: "easeOut" }}
-          >
-            <PledgeIcon />
-            The Pledge
-          </motion.a>
+          {/* Pledge + Providers share the top row on mobile - the logo gets
+              its own row below instead of being squeezed between them.
+              sm:contents flattens this wrapper away again at the desktop
+              breakpoint, where all three go back to one row via order. */}
+          <div className="flex items-center justify-between gap-4 sm:contents">
+            <motion.a
+              href="/pledge"
+              className="land-pill land-pledge sm:order-1"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.28, ease: "easeOut" }}
+            >
+              <PledgeIcon />
+              The Pledge
+            </motion.a>
+
+            <a
+              href="https://dwen-wo-ho-nine.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="land-providers-btn sm:order-3"
+            >
+              Providers
+              <ProvidersIcon />
+            </a>
+          </div>
 
           <motion.button
             type="button"
             onClick={() => router.push("/versions")}
             aria-label="Switch LOCK IN version"
+            className="self-center sm:order-2"
             initial={{ opacity: 0, y: 12, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ ...overshoot, delay: 0.2 }}
@@ -131,24 +148,9 @@ export default function Home() {
               width={384}
               height={67}
               priority
-              className="invert"
-              style={{
-                height: "clamp(26px, 4vh, 36px)",
-                width: "auto",
-                objectFit: "contain",
-              }}
+              className="h-5 w-auto object-contain invert sm:h-7 md:h-8"
             />
           </motion.button>
-
-          <a
-            href="https://dwen-wo-ho-nine.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="land-providers-btn"
-          >
-            Providers
-            <ProvidersIcon />
-          </a>
         </motion.nav>
 
         <main
@@ -224,47 +226,92 @@ export default function Home() {
           </motion.p>
         </main>
 
-        <motion.div
-          className="land-pill absolute z-[3]"
-          style={{
-            left: "clamp(22px, 3.6vw, 48px)",
-            bottom: "clamp(24px, 5vh, 52px)",
-          }}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
-        >
-          <HandIcon />
-          Say Hi
-        </motion.div>
+        {/* mobile: Say Hi / We have Receipts / Studios stacked, centered -
+            their combined natural width doesn't fit one row without
+            overlapping below the desktop breakpoint, unlike the three-way
+            spread below */}
+        <div className="absolute inset-x-0 bottom-0 z-[3] flex flex-col items-center gap-3 px-6 pb-6 sm:hidden">
+          <motion.div
+            className="land-pill"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
+          >
+            <HandIcon />
+            Say Hi
+          </motion.div>
 
-        <motion.div
-          className="land-receipts-wrap absolute left-1/2 z-[3] -translate-x-1/2"
-          style={{ bottom: "clamp(24px, 5vh, 52px)" }}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.75, ease: "easeOut" }}
-        >
-          <FloatingReceipts className="bottom-[calc(100%+0.6em)] left-1/2" />
-          <span className="rc-pre">We have</span>
-          <span className="rc-chip">
-            <ReceiptIcon className="rc-ic" /> Receipts
-          </span>
-        </motion.div>
+          <motion.div
+            className="land-receipts-wrap relative"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.75, ease: "easeOut" }}
+          >
+            <FloatingReceipts
+              className="bottom-[calc(100%+0.6em)] left-1/2"
+              mobile
+            />
+            <span className="rc-pre">We have</span>
+            <span className="rc-chip">
+              <ReceiptIcon className="rc-ic" /> Receipts
+            </span>
+          </motion.div>
 
-        <motion.div
-          className="land-pill absolute z-[3]"
-          style={{
-            right: "clamp(22px, 3.6vw, 48px)",
-            bottom: "clamp(24px, 5vh, 52px)",
-          }}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
-        >
-          <StudiosIcon />
-          JustGo Health Studios
-        </motion.div>
+          <motion.div
+            className="land-pill"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
+          >
+            <StudiosIcon />
+            JustGo Health Studios
+          </motion.div>
+        </div>
+
+        {/* sm and up: original three-way absolute spread, unchanged */}
+        <div className="hidden sm:contents">
+          <motion.div
+            className="land-pill absolute z-[3]"
+            style={{
+              left: "clamp(22px, 3.6vw, 48px)",
+              bottom: "clamp(24px, 5vh, 52px)",
+            }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
+          >
+            <HandIcon />
+            Say Hi
+          </motion.div>
+
+          <motion.div
+            className="land-receipts-wrap absolute left-1/2 z-[3] -translate-x-1/2"
+            style={{ bottom: "clamp(24px, 5vh, 52px)" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.75, ease: "easeOut" }}
+          >
+            <FloatingReceipts className="bottom-[calc(100%+0.6em)] left-1/2" />
+            <span className="rc-pre">We have</span>
+            <span className="rc-chip">
+              <ReceiptIcon className="rc-ic" /> Receipts
+            </span>
+          </motion.div>
+
+          <motion.div
+            className="land-pill absolute z-[3]"
+            style={{
+              right: "clamp(22px, 3.6vw, 48px)",
+              bottom: "clamp(24px, 5vh, 52px)",
+            }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.7, ease: "easeOut" }}
+          >
+            <StudiosIcon />
+            JustGo Health Studios
+          </motion.div>
+        </div>
       </div>
 
       <PrivacyGateModal

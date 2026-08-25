@@ -106,6 +106,9 @@ const MONTHS = [
   "November",
   "December",
 ];
+// full names crowd the narrow Day/Month/Year row on mobile - shown there
+// instead of MONTHS, same underlying value either way
+const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3));
 
 // title-cases as you type ("john kwame" -> "John Kwame") and strips anything
 // that isn't a letter, space, apostrophe or hyphen - a real name, not a handle
@@ -1351,6 +1354,7 @@ function OnboardPageInner() {
                           value={dobMonth}
                           onChange={setDobMonth}
                           options={MONTHS}
+                          mobileLabels={MONTHS_SHORT}
                         />
                         <CustomSelect
                           className="min-w-0 flex-[3]"

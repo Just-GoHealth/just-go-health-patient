@@ -2,6 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// options[i] is still the real value stored/compared everywhere (e.g.
+// MONTHS.indexOf(dobMonth) elsewhere) - mobileLabels only swaps what's
+// *displayed* on narrow screens, parallel by index, never the value itself
+function OptionLabel({
+  full,
+  mobile,
+}: {
+  full: string;
+  mobile?: string;
+}) {
+  if (!mobile) return <>{full}</>;
+  return (
+    <>
+      <span className="sm:hidden">{mobile}</span>
+      <span className="hidden sm:inline">{full}</span>
+    </>
+  );
+}
+
 export function CustomSelect({
   value,
   onChange,
@@ -9,6 +28,7 @@ export function CustomSelect({
   placeholder,
   className,
   defaultScrollValue,
+  mobileLabels,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -18,6 +38,10 @@ export function CustomSelect({
   // where to land when nothing is selected yet, if the array midpoint isn't
   // a good guess (e.g. a birth-year list, where the middle skews too old)
   defaultScrollValue?: string;
+  // parallel to options - a shorter label to show on mobile instead (e.g.
+  // month names in the cramped Day/Month/Year row), while value/onChange
+  // still deal in the full option string either way
+  mobileLabels?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -64,7 +88,14 @@ export function CustomSelect({
         className="border-line focus:border-gold/60 flex w-full items-center justify-between rounded-xl border bg-white/5 px-4 py-3 text-left text-base outline-none"
       >
         <span className={`min-w-0 truncate ${value ? "text-txt" : "text-muted"}`}>
-          {value || placeholder}
+          {value ? (
+            <OptionLabel
+              full={value}
+              mobile={mobileLabels?.[options.indexOf(value)]}
+            />
+          ) : (
+            placeholder
+          )}
         </span>
         <svg
           viewBox="0 0 24 24"
@@ -86,7 +117,7 @@ export function CustomSelect({
           ref={listRef}
           className="border-line absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border bg-[#2b1210] shadow-2xl"
         >
-          {options.map((opt) => (
+          {options.map((opt, i) => (
             <button
               key={opt}
               type="button"
@@ -100,7 +131,7 @@ export function CustomSelect({
                   : "text-txt hover:bg-white/10"
               }`}
             >
-              {opt}
+              <OptionLabel full={opt} mobile={mobileLabels?.[i]} />
             </button>
           ))}
         </div>

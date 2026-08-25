@@ -20,6 +20,54 @@ body {
   color: var(--color-txt);
 }
 
+/* the scrollbar, dressed - ported 1:1 from the legacy mock's own answer
+   to this (guide/SilverWing M_10.html): one bar everywhere, dark channel,
+   gold thumb, instead of each browser's default grey. Swipeable strips
+   (the mental-health tracker, dome answer lists) keep their own clean
+   edge - hidden, not styled, since they're meant to be swiped. */
+html body,
+html body * {
+  scrollbar-width: thin !important;
+  scrollbar-color: #c2a36a rgba(18, 12, 10, 0.55) !important;
+}
+html body ::-webkit-scrollbar,
+html body::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+  background: transparent !important;
+}
+html body ::-webkit-scrollbar-track,
+html body::-webkit-scrollbar-track {
+  background: rgba(18, 12, 10, 0.5) !important;
+  border-radius: 999px !important;
+  margin: 3px 0 !important;
+}
+html body ::-webkit-scrollbar-thumb,
+html body::-webkit-scrollbar-thumb {
+  border-radius: 999px !important;
+  background: linear-gradient(180deg, #f6e7c4, #e8d4ad 46%, #b8935a) !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+}
+html body ::-webkit-scrollbar-thumb:hover,
+html body::-webkit-scrollbar-thumb:hover {
+  filter: brightness(1.09);
+}
+html body ::-webkit-scrollbar-thumb:active {
+  filter: brightness(0.96);
+}
+html body ::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+html body .mh-strip::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+}
+html body .mh-strip {
+  scrollbar-width: none !important;
+}
+
 :root {
   /* the one warm background every authenticated in-app screen shares
      (onboarding, the battery check, the result board, the day view) — a
@@ -164,6 +212,7 @@ body {
   align-items: center;
   gap: 0.55em;
   cursor: pointer;
+  white-space: nowrap;
   border: 1.6px dashed rgba(232, 212, 173, 0.75);
   background: rgba(232, 212, 173, 0.16);
   backdrop-filter: blur(8px) saturate(140%);
@@ -226,6 +275,7 @@ body {
   align-items: center;
   gap: 0.5em;
   cursor: pointer;
+  white-space: nowrap;
   font-weight: 800;
   letter-spacing: 0.02em;
   font-size: clamp(13.8px, 1.84vh, 17.25px);

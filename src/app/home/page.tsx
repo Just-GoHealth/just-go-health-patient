@@ -319,42 +319,72 @@ function HomePageInner() {
           showBoard ? "overflow-y-auto" : "justify-center"
         }`}
       >
-        {/* compact mobile-only header - the left panel above is hidden below sm */}
-        <div className="flex items-center gap-3 sm:hidden">
-          {membership?.campusLogo && (
-            // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
-            <img
-              src={membership.campusLogo}
-              alt=""
-              width={44}
-              height={44}
-              className="size-11 rounded-full object-cover"
-            />
-          )}
-          <div className="text-left">
-            <p className="font-bold">{membership?.campusName ?? "Your team"}</p>
-            {membership?.countdown?.text && (
-              <p
-                className={`text-xs font-semibold ${
-                  membership.countdown.soon ? "text-no" : "text-yes"
-                }`}
+        {/* compact mobile-only header - the left panel above is hidden below
+            sm. Two aligned columns (branding+retake / profile+care) so each
+            action button sits right under what it relates to, instead of
+            floating on its own row with a big gap on either side of it. */}
+        <div className="flex w-full items-start justify-between gap-4 border-b border-white/10 pb-4 sm:hidden">
+          <div className="flex flex-col items-start gap-3">
+            <div className="flex items-center gap-3">
+              {membership?.campusLogo && (
+                // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
+                <img
+                  src={membership.campusLogo}
+                  alt=""
+                  width={44}
+                  height={44}
+                  className="size-11 rounded-full object-cover"
+                />
+              )}
+              <div className="text-left">
+                <p className="font-bold">{membership?.campusName ?? "Your team"}</p>
+                {membership?.countdown?.text && (
+                  <p
+                    className={`text-xs font-semibold ${
+                      membership.countdown.soon ? "text-no" : "text-yes"
+                    }`}
+                  >
+                    {membership.countdown.text}
+                  </p>
+                )}
+              </div>
+            </div>
+            {showBoard && board && (
+              <button
+                type="button"
+                onClick={handleRetake}
+                disabled={retaking}
+                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide whitespace-nowrap text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
               >
-                {membership.countdown.text}
-              </p>
+                {retaking ? "…" : "↻ Retake Testing"}
+              </button>
             )}
           </div>
-          <div className="ml-auto flex flex-col items-end gap-1.5">
-            {profile?.nickname && (
-              <p className="truncate text-xs font-bold">{profile.nickname}</p>
+
+          <div className="flex shrink-0 flex-col items-end gap-3">
+            <div className="flex flex-col items-end gap-1.5">
+              {profile?.nickname && (
+                <p className="truncate text-xs font-bold">{profile.nickname}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(true)}
+                disabled={loggingOut}
+                className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 whitespace-nowrap transition-colors hover:text-white disabled:opacity-60"
+              >
+                {loggingOut ? "…" : "Log out"}
+              </button>
+            </div>
+            {showBoard && board && (
+              <button
+                type="button"
+                onClick={handleCareAck}
+                disabled={ackLoading}
+                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide whitespace-nowrap text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
+              >
+                {ackLoading ? "…" : "Get Care ♥"}
+              </button>
             )}
-            <button
-              type="button"
-              onClick={() => setConfirmOpen(true)}
-              disabled={loggingOut}
-              className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
-            >
-              {loggingOut ? "…" : "Log out"}
-            </button>
           </div>
         </div>
 
@@ -373,7 +403,9 @@ function HomePageInner() {
                 message on this page now, since board.label/head can be
                 worded inconsistently with it (real example: "Scheduled"
                 vs "One day before the contest" for the same state) */}
-            <div className="flex items-center justify-between gap-3">
+            {/* hidden on mobile - those same two buttons already live in the
+                compact header above, grouped under their related column */}
+            <div className="hidden items-center justify-between gap-3 sm:flex">
               <button
                 type="button"
                 onClick={handleRetake}

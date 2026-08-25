@@ -30,7 +30,13 @@ type Chip = {
   sr: number;
 };
 
-export function FloatingReceipts({ className }: { className?: string }) {
+export function FloatingReceipts({
+  className,
+  mobile,
+}: {
+  className?: string;
+  mobile?: boolean;
+}) {
   const [chips, setChips] = useState<Chip[]>([]);
   const [heldIds, setHeldIds] = useState<Set<number>>(new Set());
   const idxRef = useRef(0);
@@ -40,6 +46,11 @@ export function FloatingReceipts({ className }: { className?: string }) {
 
   useEffect(() => {
     idxRef.current = Math.floor(Math.random() * SECRETS.length);
+    // the 3-lane spread needs real horizontal room either side of center -
+    // on a narrow phone that overruns the screen edges and collides with
+    // whatever else sits at the bottom, so mobile gets a single dead-center
+    // lane (one chip at a time) instead
+    const lanes = mobile ? [0] : LANES;
 
     function remove(id: number, lane: number) {
       timers.current.delete(id);
@@ -48,7 +59,7 @@ export function FloatingReceipts({ className }: { className?: string }) {
     }
 
     function pop() {
-      const freeLanes = LANES.map((_, i) => i).filter(
+      const freeLanes = lanes.map((_, i) => i).filter(
         (i) => !occupiedLanes.current.has(i),
       );
       if (!freeLanes.length) return; // every lane taken - wait for one to clear
@@ -64,7 +75,7 @@ export function FloatingReceipts({ className }: { className?: string }) {
         lane,
         name,
         text,
-        sx: LANES[lane] + (Math.random() * 6 - 3),
+        sx: lanes[lane] + (mobile ? 0 : Math.random() * 6 - 3),
         sh: -(8 + Math.random() * 14),
         sr: Math.random() * 7 - 3.5,
       };
@@ -89,7 +100,7 @@ export function FloatingReceipts({ className }: { className?: string }) {
       // doesn't linger forever as an orphan once the effect re-runs.
       setChips([]);
     };
-  }, []);
+  }, [mobile]);
 
   function hold(id: number) {
     const t = timers.current.get(id);
