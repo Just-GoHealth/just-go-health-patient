@@ -55,6 +55,15 @@ const VERSION_CODE = "nsmq2026";
 const VERSION_LABEL = "NSMQ 2026";
 const LOADING_MIN_MS = 2400;
 
+// must match home/page.tsx's key. GET /patients/screenings/latest is
+// documented to always 204 for a contest-day (PRE_SHORT) run — "scored and
+// stored but deliberately shows no board" — even though it genuinely
+// happened, so the submit() response right here is the *only* place that
+// board data ever reaches the client. Stash it so /home can still show it
+// after the "Continue" navigation instead of re-fetching from an endpoint
+// that will never return it for this window.
+const CARRIED_BOARD_KEY = "screening_carried_board_v1";
+
 // the left profile panel — persists across the loading and battery phases
 // (not the board, which is a separate full-width layout in the mock)
 function LeftPanel({
@@ -146,6 +155,23 @@ function firstUnanswered(items: ScreeningItem[]): number {
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function stashCarriedBoard(board: ScreeningBoard | undefined) {
+  if (!board) return;
+  try {
+    sessionStorage.setItem(CARRIED_BOARD_KEY, JSON.stringify(board));
+  } catch {
+    // ignore unavailable storage - /home just falls back to "nothing due"
+  }
+}
+
+function clearCarriedBoard() {
+  try {
+    sessionStorage.removeItem(CARRIED_BOARD_KEY);
+  } catch {
+    // ignore unavailable storage
+  }
 }
 
 export default function ScreeningPage() {
@@ -267,8 +293,10 @@ function ScreeningPageInner() {
         if (items.every((it) => it.answeredIndex != null)) {
           const boardRes = await submitScreening(data.screeningId);
           if (cancelled) return;
-          setBoard(boardRes.data ?? null);
-          setPhase("board");
+          // the check is already done - land on /home (which reads this
+          // stashed board) instead of re-showing results on this page
+          stashCarriedBoard(boardRes.data);
+          router.push("/home");
           return;
         }
         setRun(data);
@@ -292,8 +320,8 @@ function ScreeningPageInner() {
           const boardRes = await getLatestBoard(VERSION_CODE);
           if (cancelled) return;
           if (boardRes.data) {
-            setBoard(boardRes.data);
-            setPhase("board");
+            stashCarriedBoard(boardRes.data);
+            router.push("/home");
             return;
           }
         } catch {
@@ -392,8 +420,8 @@ function ScreeningPageInner() {
         );
         if (res.data?.complete) {
           const boardRes = await submitScreening(run.screeningId);
-          setBoard(boardRes.data ?? null);
-          setPhase("board");
+          stashCarriedBoard(boardRes.data);
+          router.push("/home");
           return;
         }
       } else if (isLast) {
@@ -436,6 +464,9 @@ function ScreeningPageInner() {
       // action. Leaving here (to /home) is a separate, explicit choice via
       // "Continue" below.
       setCareAcked(true);
+      // the day's been opened - /home should show its normal empty/day
+      // view next, not resurrect this board from the carry-over
+      clearCarriedBoard();
       showToast("We've opened your day. Come back whenever you're ready.");
     } catch {
       showToast("Something went wrong. Please try again.");

@@ -26,6 +26,30 @@ const VERSION_CODE = "nsmq2026";
 // past the sign-in screen
 const ONBOARD_STORAGE_KEY = "onboard_progress_v1";
 
+// must match screening/page.tsx's key. GET /patients/screenings/latest is
+// documented to always 204 for a contest-day (PRE_SHORT) run - "scored and
+// stored but deliberately shows no board" - even though it genuinely
+// happened, so this is the only way the board they just finished still
+// shows up here after the "Continue" navigation instead of "nothing due".
+const CARRIED_BOARD_KEY = "screening_carried_board_v1";
+
+function readCarriedBoard(): ScreeningBoard | null {
+  try {
+    const raw = sessionStorage.getItem(CARRIED_BOARD_KEY);
+    return raw ? (JSON.parse(raw) as ScreeningBoard) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearCarriedBoard() {
+  try {
+    sessionStorage.removeItem(CARRIED_BOARD_KEY);
+  } catch {
+    // ignore unavailable storage
+  }
+}
+
 // dev-only shortcut so the day view can be reviewed without a real test
 // account — never active in a production build regardless of query string
 const MOCK_ENABLED = process.env.NODE_ENV !== "production";
@@ -123,9 +147,12 @@ function HomePageInner() {
       // null and the plain countdown/CTA view below shows instead
       try {
         const boardRes = await getLatestBoard(VERSION_CODE);
-        if (!cancelled) setBoard(boardRes.data ?? null);
+        const liveBoard = boardRes.data ?? null;
+        if (liveBoard) clearCarriedBoard();
+        if (!cancelled) setBoard(liveBoard ?? readCarriedBoard());
       } catch {
         // non-fatal - the day view works fine with no board
+        if (!cancelled) setBoard(readCarriedBoard());
       }
       try {
         const profRes = await getHomeProfile();
@@ -147,6 +174,7 @@ function HomePageInner() {
       // takes the board off the page and reveals the day view underneath,
       // per the product's own rule for this state (§9.2)
       setBoard(null);
+      clearCarriedBoard();
       showToast("We've opened your day. Come back whenever you're ready.");
     } catch {
       // best-effort - if this fails the board just stays up for a retry
