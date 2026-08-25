@@ -36,51 +36,36 @@ initials. The `next/image` robustness fix from earlier is still worth keeping fo
 whenever a photo *is* present, it just isn't the reason nothing showed for this
 account's data.
 
-## 2. Contest-day (T3 / PRE_SHORT) submissions come back with no results data
+## 2. ~~Contest-day (T3 / PRE_SHORT) submissions come back with no results data~~ — FIXED
 
-**Endpoint:** `POST /v1/patients/screenings/{screeningId}/submit`
+**Endpoint:** `GET /v1/patients/screenings/latest`
 
-**What's happening:** When a patient finishes the screening during the contest-day
-window, the `submit` response comes back with no usable `sections` data (empty or
-missing), so the results board is blank immediately after finishing — before the
-frontend has done anything with the response.
+Backend confirmed the fix and it's reflected in the updated OpenAPI spec
+(`api-docs (1).json`, 2026-08-25). The description changed from *"204 when there is
+nothing to draw, including after a contest-day run, which is scored and stored but
+deliberately shows no board"* to *"The most recently submitted run for the version,
+contest day included. 204 only when the patient has never submitted one."*
 
-This lines up with the documented behavior of the sibling endpoint:
+Frontend already reads from this endpoint on `/home` and had a sessionStorage
+carry-over as a workaround for the old behavior — kept in place, but now only as a
+bridge for brief propagation lag right after submit, not the primary path.
 
-> `GET /v1/patients/screenings/latest` — *"204 when there is nothing to draw,
-> including after a contest-day run, which is scored and stored but deliberately
-> shows no board."*
+## 3. ~~No endpoint to retake an already-submitted screening~~ — FIXED, wired up
 
-That description only mentions `latest`, but the same emptiness shows up in the
-`submit` response itself for a contest-day run, which is the only place this data
-ever reaches the client — `latest` is a documented dead end for this window.
+**Endpoint:** `POST /v1/patients/screenings/{screeningId}/retake` (new, per the
+2026-08-25 spec update)
 
-**What we need:** Patients who complete the check on contest day should still be able
-to see their own results right after finishing. Either:
+> "Opens a fresh attempt at the same window and returns it exactly as starting one
+> does. The earlier attempt is kept and stays readable by the providers it was
+> routed to. 409 `SCREENING_NOT_SUBMITTED` if the run is still open, and 409
+> `SCREENING_WINDOW_CLOSED` once the window has moved on. If an attempt is already
+> open for the window, that one is returned instead."
 
-- `submit` should return real `sections` data for a contest-day run (same shape as
-  any other window), or
-- if withholding results on contest day is intentional product policy, we need that
-  confirmed explicitly, plus guidance on what (if anything) the frontend should show
-  instead of a blank board.
-
-## 3. No endpoint to retake an already-submitted screening
-
-**Endpoint:** `POST /v1/patients/screenings` (`StartScreeningRequest`)
-
-**What's happening:** This only accepts `{ versionCode }` and is idempotent — calling
-it again after a screening is already submitted just resumes/returns the same
-finished run, not a fresh attempt. There's currently no way to intentionally retake
-a check for the same window.
-
-**What we need:** A supported way to start a genuinely new attempt for an
-already-submitted window — either:
-
-- a `force` / `retake: true` flag on the existing start endpoint, or
-- a dedicated endpoint, e.g. `POST /v1/patients/screenings/{screeningId}/retake`.
-
-Until this exists, the frontend's "Retake Testing" button is disabled with an
-explanatory tooltip rather than silently re-showing the same old results.
+The endpoint exists now. The frontend's "Retake Testing" button on `/home` is wired
+to it: on click, calls `retake`, then routes to `/screening` to begin the fresh
+attempt. `SCREENING_WINDOW_CLOSED` shows a toast explaining the window's closed;
+`SCREENING_NOT_SUBMITTED` (the current attempt turned out to still be open) just
+routes to `/screening` to resume it instead of treating that as a failure.
 
 ## 4. Provider/curator patient-detail "dome" doesn't match what the patient sees
 

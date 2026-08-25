@@ -669,12 +669,22 @@ export function submitScreening(screeningId: string) {
   );
 }
 
+// opens a fresh attempt at the same window as a genuinely new run - the
+// earlier attempt is kept and stays readable by the providers it was routed
+// to. 409 SCREENING_NOT_SUBMITTED if the current run is still open (caller
+// should just resume that instead), 409 SCREENING_WINDOW_CLOSED once the
+// window has moved on.
+export function retakeScreening(screeningId: string) {
+  return post<ScreeningRun>(
+    `/v1/patients/screenings/${encodeURIComponent(screeningId)}/retake`,
+  );
+}
+
 // ---- The result board (§9) ----
 
-// 204 No Content is a normal outcome here — no board yet, or the last run
-// was a contest-day (PRE_SHORT) one, which never produces a board. apiFetch
-// returns an empty envelope (data: undefined) for a bodyless 204, so callers
-// should treat a missing `data` as "open the day view", not as an error.
+// 204 No Content is a normal outcome here - no board yet, since the patient
+// has never submitted one for this version. A contest-day (PRE_SHORT) run
+// returns its board here same as any other window.
 export function getLatestBoard(versionCode: string) {
   return get<ScreeningBoard>(
     `/v1/patients/screenings/latest?versionCode=${encodeURIComponent(versionCode)}`,

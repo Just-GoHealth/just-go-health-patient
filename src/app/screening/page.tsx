@@ -55,13 +55,11 @@ const VERSION_CODE = "nsmq2026";
 const VERSION_LABEL = "NSMQ 2026";
 const LOADING_MIN_MS = 2400;
 
-// must match home/page.tsx's key. GET /patients/screenings/latest is
-// documented to always 204 for a contest-day (PRE_SHORT) run — "scored and
-// stored but deliberately shows no board" — even though it genuinely
-// happened, so the submit() response right here is the *only* place that
-// board data ever reaches the client. Stash it so /home can still show it
-// after the "Continue" navigation instead of re-fetching from an endpoint
-// that will never return it for this window.
+// must match home/page.tsx's key. GET /patients/screenings/latest now
+// returns the just-submitted board for every window, contest day included
+// (backend fix - it used to deliberately 204 on contest day). Still stash
+// the submit() response here as a bridge against any brief propagation lag
+// between that write and /home's read, right after the redirect below.
 const CARRIED_BOARD_KEY = "screening_carried_board_v1";
 
 // the left profile panel — persists across the loading and battery phases

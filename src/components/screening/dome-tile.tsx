@@ -163,9 +163,9 @@ export function DomeTile({
         </span>
       </button>
 
-      {open &&
-        (section.emergency ? (
-          showInlineGetCare && (
+      {open && (
+        <>
+          {section.emergency && showInlineGetCare && (
             <button
               type="button"
               onClick={onGetCare}
@@ -174,8 +174,7 @@ export function DomeTile({
             >
               {ackLoading ? "One sec…" : "Get Care"}
             </button>
-          )
-        ) : (
+          )}
           <div className="mt-3 flex max-h-[40vh] flex-col gap-2 overflow-y-auto">
             {(section.items ?? []).map((item, i) => (
               <div
@@ -206,7 +205,8 @@ export function DomeTile({
               </div>
             ))}
           </div>
-        ))}
+        </>
+      )}
     </div>
   );
 }

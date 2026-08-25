@@ -13,6 +13,7 @@ import {
   getLatestBoard,
   getVersionMembership,
   logout,
+  retakeScreening,
   type HomeProfileResponse,
   type MembershipResponse,
   type ScreeningBoard,
@@ -26,11 +27,11 @@ const VERSION_CODE = "nsmq2026";
 // past the sign-in screen
 const ONBOARD_STORAGE_KEY = "onboard_progress_v1";
 
-// must match screening/page.tsx's key. GET /patients/screenings/latest is
-// documented to always 204 for a contest-day (PRE_SHORT) run - "scored and
-// stored but deliberately shows no board" - even though it genuinely
-// happened, so this is the only way the board they just finished still
-// shows up here after the "Continue" navigation instead of "nothing due".
+// must match screening/page.tsx's key. GET /patients/screenings/latest now
+// returns the just-submitted board for every window, contest day included
+// (backend fix - it used to deliberately 204 on contest day). This carried
+// copy is just a bridge against any brief propagation lag between that
+// write and the read right below, not the primary path anymore.
 const CARRIED_BOARD_KEY = "screening_carried_board_v1";
 
 function readCarriedBoard(): ScreeningBoard | null {
@@ -83,7 +84,7 @@ function HomePageInner() {
   const [membership, setMembership] = useState<MembershipResponse | null>(
     () =>
       mock
-        ? mock === "empty" || mock === "board"
+        ? mock === "empty" || mock === "board" || mock === "board1"
           ? { ...MOCK_MEMBERSHIP, screeningDue: false }
           : MOCK_MEMBERSHIP
         : null,
@@ -91,14 +92,21 @@ function HomePageInner() {
   // the latest result board - this page IS the day view once a board
   // exists, not a screen you pass through on the way back from /screening.
   // ?mock=board previews it directly (?mock=1's screeningDue:true would
-  // otherwise always show the "Take Your Check" CTA ahead of any board)
+  // otherwise always show the "Take Your Check" CTA ahead of any board).
+  // ?mock=board1 previews a board with fewer than 3 real sections, to
+  // check the dome row's empty-slot padding (see DomeBoard/EmptyDomeSlot).
   const [board, setBoard] = useState<ScreeningBoard | null>(() =>
-    mock === "board" ? MOCK_SCREENING_BOARD : null,
+    mock === "board"
+      ? MOCK_SCREENING_BOARD
+      : mock === "board1"
+        ? { ...MOCK_SCREENING_BOARD, sections: MOCK_SCREENING_BOARD.sections?.slice(0, 1) }
+        : null,
   );
   const [profile, setProfile] = useState<HomeProfileResponse | null>(() =>
     mock ? { nickname: "You" } : null,
   );
   const [ackLoading, setAckLoading] = useState(false);
+  const [retaking, setRetaking] = useState(false);
   const [loading, setLoading] = useState(!mock);
   const [loggingOut, setLoggingOut] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -165,6 +173,27 @@ function HomePageInner() {
       cancelled = true;
     };
   }, [router, mock]);
+
+  async function handleRetake() {
+    if (!board?.screeningId || mock) return;
+    setRetaking(true);
+    try {
+      await retakeScreening(board.screeningId);
+      router.push("/screening");
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "SCREENING_WINDOW_CLOSED") {
+        showToast("This window has closed — a new check isn't available.");
+      } else if (e instanceof ApiError && e.code === "SCREENING_NOT_SUBMITTED") {
+        // the current attempt is still open rather than submitted - just
+        // go resume it instead of treating this as a failure
+        router.push("/screening");
+      } else {
+        showToast("Something went wrong. Please try again.");
+      }
+    } finally {
+      setRetaking(false);
+    }
+  }
 
   async function handleCareAck() {
     if (!board?.screeningId) return;
@@ -345,19 +374,13 @@ function HomePageInner() {
                 worded inconsistently with it (real example: "Scheduled"
                 vs "One day before the contest" for the same state) */}
             <div className="flex items-center justify-between gap-3">
-              {/* disabled - there's no backend endpoint that can give a
-                  fresh attempt at an already-submitted window. POST
-                  /patients/screenings only takes {versionCode} and its own
-                  docs say calling it again just resumes what's in
-                  progress, so clicking this used to silently re-land on
-                  this same board instead of actually retaking anything */}
               <button
                 type="button"
-                disabled
-                title="Retaking an already-submitted check isn't available yet"
-                className="border-line text-muted inline-flex cursor-not-allowed items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide uppercase opacity-60"
+                onClick={handleRetake}
+                disabled={retaking}
+                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
               >
-                ↻ Retake Testing
+                {retaking ? "…" : "↻ Retake Testing"}
               </button>
               <button
                 type="button"
