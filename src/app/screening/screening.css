@@ -313,13 +313,19 @@
 .f-title {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 0.4em;
   white-space: nowrap;
   max-width: 96%;
   font-weight: 800;
   letter-spacing: -0.6px;
   line-height: 1;
-  font-size: clamp(29.9px, 5.98vh, 59.8px);
+  /* vh alone doesn't account for narrow phones - a short-but-wide clamp
+     range still overflows a tall-but-narrow viewport with a long question
+     name, since nothing here scales with width. Mixing in a vw term keeps
+     it from outrunning the screen edge on mobile portrait. */
+  font-size: clamp(22px, 5vw + 2vh, 59.8px);
   animation: subPop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 @keyframes subPop {
@@ -622,6 +628,47 @@
   }
   .mh-bar-batt {
     display: flex;
+  }
+}
+/* mobile: with .wu-left hidden, .mh-screen is the whole viewport. The
+   30%-of-height bottom bar was tuned against a desktop window - on a
+   short phone in portrait it eats too much of the screen and squeezes the
+   question/options above it. Let the bar size to its own content instead,
+   capped so it can never dominate, and give both halves a scroll fallback
+   so a genuinely tall combination (long question + HUH panel + strip) is
+   reachable by scrolling instead of silently clipped by overflow:hidden. */
+@media (max-width: 900px) {
+  .wu-shell {
+    overflow-y: auto;
+  }
+  .mh-screen {
+    overflow-y: auto;
+  }
+  .mh-bar {
+    flex: 0 0 auto;
+    max-height: 38vh;
+  }
+  /* this label was sized for the desktop split-screen layout, where the
+     real battery graphic (in the hidden left panel) meant this bar was
+     just a progress strip caption. On mobile it's the only battery
+     readout on the row, but the font was still scaling off vh alone with
+     no regard for the now much narrower row - it was wrapping to 3 lines
+     and crushing the item strip below it. */
+  .mh-bar-title {
+    font-size: clamp(13px, 4.2vw, 19px);
+    line-height: 1.2;
+  }
+}
+@media (max-width: 480px) {
+  .f-title {
+    /* a long item name + the HUH? pill no longer force single-line - on a
+       narrow phone that combination is what was overflowing the screen
+       edge and getting clipped */
+    white-space: normal;
+    line-height: 1.08;
+  }
+  .mh-opts {
+    grid-template-columns: 1fr;
   }
 }
 .mh-tracker span {

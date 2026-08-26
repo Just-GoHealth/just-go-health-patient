@@ -34,7 +34,6 @@ import {
   setPassword as setPasswordApi,
   signin,
   signup,
-  skipProfilePhoto,
   uploadProfilePhoto,
   verifyOtp,
 } from "@/lib/api";
@@ -838,19 +837,17 @@ function OnboardPageInner() {
 
   async function submitPhoto() {
     // dev-jump previews this screen with no real session — the real
-    // skip/upload endpoints would just 401, so simulate success and move on
+    // upload endpoint would just 401, so simulate success and move on
     if (devJumpStep) {
       setStep("campus");
       return;
     }
+    // a photo is required now - the Next button stays disabled until one is
+    // chosen, so this is just a defensive no-op, not a real path
+    if (!photoFile || !photoPreviewUrl) return;
     setLoading(true);
     setError(null);
     try {
-      if (!photoFile || !photoPreviewUrl) {
-        const res = await skipProfilePhoto();
-        await routeByNextStep(res.data?.nextStep, "campus");
-        return;
-      }
       const img = document.createElement("img");
       const loaded = new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
@@ -1146,11 +1143,11 @@ function OnboardPageInner() {
           onClick: submitResetPassword,
         };
       case "photo":
-        // matches the mock: always "Next" — skipping when no photo was
-        // chosen is silent, never called out on the button itself
+        // a photo is required to continue — too many patients were reaching
+        // the silent-skip path and ending up with no photo on file
         return {
           show: true,
-          enabled: !loading,
+          enabled: !loading && !!photoPreviewUrl,
           label: loading ? "One sec…" : `Next (${PROGRESS.photo}%)`,
           onClick: submitPhoto,
         };
