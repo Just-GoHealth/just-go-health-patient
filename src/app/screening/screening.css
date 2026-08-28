@@ -19,6 +19,15 @@
   background: radial-gradient(118% 86% at 50% 16%, #733730 0%, #572621 42%, #3b1a17 74%, #2b1210 100%);
   color: var(--color-txt);
   overflow: hidden;
+  /* .f-title/.mh-bar-title size themselves off this column's own rendered
+     width (cqi), not the document viewport (vw) - .wu-left takes 40% of
+     the window above 900px, so vw-based sizing was tuned as if this column
+     always had the full window to itself. That's exactly right on a phone
+     (no left panel, column = 100vw) but badly wrong on a tablet (left
+     panel visible, column = 60vw): the title sized for a full window kept
+     overflowing the narrower column. cqi tracks the real column width at
+     every size, phone through desktop, with no separate tablet case needed. */
+  container-type: inline-size;
 }
 
 /* ---- left profile panel ---- */
@@ -321,11 +330,10 @@
   font-weight: 800;
   letter-spacing: -0.6px;
   line-height: 1;
-  /* vh alone doesn't account for narrow phones - a short-but-wide clamp
-     range still overflows a tall-but-narrow viewport with a long question
-     name, since nothing here scales with width. Mixing in a vw term keeps
-     it from outrunning the screen edge on mobile portrait. */
-  font-size: clamp(22px, 5vw + 2vh, 59.8px);
+  /* cqi (this column's own width - see .mh-screen) rather than vw, so this
+     scales correctly whether the column is the full window (mobile) or
+     the ~60% left after .wu-left (tablet/desktop) */
+  font-size: clamp(20px, 8cqi, 56px);
   animation: subPop 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 @keyframes subPop {
@@ -583,7 +591,10 @@
 }
 .mh-bar-title {
   font-weight: 800;
-  font-size: clamp(16px, 4.14vh, 46px);
+  /* cqi, not vh - see .mh-screen. This is a caption for the progress
+     strip, not a hero title, so it's capped well below .f-title's max */
+  font-size: clamp(13px, 5cqi, 30px);
+  line-height: 1.2;
   letter-spacing: -0.5px;
   /* the counter/battery on the right is fixed-width, so the title has to
      be the one that shrinks (and can wrap) rather than pushing it off */
@@ -647,16 +658,6 @@
   .mh-bar {
     flex: 0 0 auto;
     max-height: 38vh;
-  }
-  /* this label was sized for the desktop split-screen layout, where the
-     real battery graphic (in the hidden left panel) meant this bar was
-     just a progress strip caption. On mobile it's the only battery
-     readout on the row, but the font was still scaling off vh alone with
-     no regard for the now much narrower row - it was wrapping to 3 lines
-     and crushing the item strip below it. */
-  .mh-bar-title {
-    font-size: clamp(13px, 4.2vw, 19px);
-    line-height: 1.2;
   }
 }
 @media (max-width: 480px) {
