@@ -279,6 +279,9 @@ export type SignupPayload = {
   dateOfBirth: string;
   password: string;
   versionCode?: string;
+  // handle of the influencer whose "Lock In with @handle" link brought the
+  // student here (see src/lib/referral.ts); omitted when there is none
+  referralHandle?: string;
 };
 
 export type SignupResponse = {

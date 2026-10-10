@@ -16,6 +16,8 @@ import {
 import { CodeGateModal } from "@/components/onboard/code-gate-modal";
 import { CustomSelect } from "@/components/onboard/custom-select";
 import { PhotoTestimonialPanel } from "@/components/onboard/photo-testimonial-panel";
+import { ONBOARD_STORAGE_KEY } from "@/lib/constants";
+import { clearReferralHandle, getReferralHandle } from "@/lib/referral";
 import {
   ApiError,
   JOIN_ERROR_COPY,
@@ -214,8 +216,6 @@ const PROGRESS: Record<Step, number> = {
   done: 100,
 };
 
-const STORAGE_KEY = "onboard_progress_v1";
-
 type SavedProgress = {
   step?: Step;
   contactType?: ContactType;
@@ -345,7 +345,7 @@ function OnboardPageInner() {
     }
     const raf = requestAnimationFrame(() => {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
+        const raw = localStorage.getItem(ONBOARD_STORAGE_KEY);
         if (raw) {
           const saved: SavedProgress = JSON.parse(raw);
           if (saved.step) setStep(saved.step);
@@ -471,7 +471,7 @@ function OnboardPageInner() {
         otpReference,
         selectedCampus,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+      localStorage.setItem(ONBOARD_STORAGE_KEY, JSON.stringify(toSave));
     } catch {
       // ignore unavailable storage (e.g. private browsing)
     }
@@ -496,7 +496,7 @@ function OnboardPageInner() {
   useEffect(() => {
     if (step === "done") {
       try {
-        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(ONBOARD_STORAGE_KEY);
       } catch {
         // ignore
       }
@@ -636,6 +636,7 @@ function OnboardPageInner() {
 
     setLoading(true);
     setError(null);
+    const referralHandle = getReferralHandle();
     try {
       const res = await signup({
         contactType,
@@ -646,7 +647,9 @@ function OnboardPageInner() {
         dateOfBirth,
         password,
         versionCode: VERSION_CODE,
+        ...(referralHandle ? { referralHandle } : {}),
       });
+      clearReferralHandle();
       setUserId(res.data?.userId ?? "");
       if (res.data?.otpReference) {
         setOtpReference(res.data.otpReference);
