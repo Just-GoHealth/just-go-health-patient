@@ -6,6 +6,7 @@ import "./screening.css";
 import { DomeBoard } from "@/components/screening/dome-board";
 import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
 import { Toast, useToast } from "@/components/shared/toast";
+import { CARRIED_BOARD_KEY, ONBOARD_STORAGE_KEY } from "@/lib/constants";
 import {
   ApiError,
   acknowledgeCare,
@@ -54,13 +55,6 @@ const MOCK_ENABLED = process.env.NODE_ENV !== "production";
 const VERSION_CODE = "nsmq2026";
 const VERSION_LABEL = "NSMQ 2026";
 const LOADING_MIN_MS = 2400;
-
-// must match home/page.tsx's key. GET /patients/screenings/latest now
-// returns the just-submitted board for every window, contest day included
-// (backend fix - it used to deliberately 204 on contest day). Still stash
-// the submit() response here as a bridge against any brief propagation lag
-// between that write and /home's read, right after the redirect below.
-const CARRIED_BOARD_KEY = "screening_carried_board_v1";
 
 // the left profile panel — persists across the loading and battery phases
 // (not the board, which is a separate full-width layout in the mock)
@@ -245,7 +239,7 @@ function ScreeningPageInner() {
       // clear request itself failed; move on and let sign-in resolve it
     } finally {
       try {
-        localStorage.removeItem("onboard_progress_v1");
+        localStorage.removeItem(ONBOARD_STORAGE_KEY);
       } catch {
         // ignore unavailable storage
       }

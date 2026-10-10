@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState } from "react";
 import { DomeBoard } from "@/components/screening/dome-board";
 import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
 import { Toast, useToast } from "@/components/shared/toast";
+import { CARRIED_BOARD_KEY, ONBOARD_STORAGE_KEY } from "@/lib/constants";
 import {
   ApiError,
   acknowledgeCare,
@@ -21,18 +22,6 @@ import {
 import { MOCK_SCREENING_BOARD } from "../screening/dev-mock";
 
 const VERSION_CODE = "nsmq2026";
-
-// must match onboard/page.tsx's STORAGE_KEY - logging out with stale wizard
-// progress still cached would let a later /onboard visit restore straight
-// past the sign-in screen
-const ONBOARD_STORAGE_KEY = "onboard_progress_v1";
-
-// must match screening/page.tsx's key. GET /patients/screenings/latest now
-// returns the just-submitted board for every window, contest day included
-// (backend fix - it used to deliberately 204 on contest day). This carried
-// copy is just a bridge against any brief propagation lag between that
-// write and the read right below, not the primary path anymore.
-const CARRIED_BOARD_KEY = "screening_carried_board_v1";
 
 function readCarriedBoard(): ScreeningBoard | null {
   try {
