@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   checks:
-    name: Lint, typecheck, build
+    name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -56,7 +56,8 @@ jobs:
       - name: Typecheck
         run: pnpm exec tsc --noEmit
 
-      # No test suite yet; added with remediation item 10.
+      - name: Test (with coverage thresholds)
+        run: pnpm exec vitest run --coverage
 
       - name: Build
         run: pnpm build
