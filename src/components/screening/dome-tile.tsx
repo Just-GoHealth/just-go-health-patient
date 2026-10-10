@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { cn } from "@/lib/utils";
 import type { BoardSection } from "@/lib/api";
 
@@ -57,7 +63,8 @@ export function DomeTile({
   // same handler, so it passes false here to avoid showing it twice.
   showInlineGetCare?: boolean;
 }) {
-  const bandColor = FAM_COLOR[section.emergency ? "emg" : (section.fam ?? "gold")];
+  const bandColor =
+    FAM_COLOR[section.emergency ? "emg" : (section.fam ?? "gold")];
   const slotRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLSpanElement>(null);
   // how many lines the title actually wrapped to, so it can shrink further

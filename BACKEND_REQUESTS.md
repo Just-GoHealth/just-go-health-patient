@@ -33,7 +33,7 @@ hands back an empty array.
 **Aside, not a bug:** every one of the 83 urgent patients has `avatarUrl: null` /
 `profilePhotoURL: null` — genuinely no photo uploaded, correctly falling back to
 initials. The `next/image` robustness fix from earlier is still worth keeping for
-whenever a photo *is* present, it just isn't the reason nothing showed for this
+whenever a photo _is_ present, it just isn't the reason nothing showed for this
 account's data.
 
 ## 2. ~~Contest-day (T3 / PRE_SHORT) submissions come back with no results data~~ — FIXED
@@ -41,10 +41,10 @@ account's data.
 **Endpoint:** `GET /v1/patients/screenings/latest`
 
 Backend confirmed the fix and it's reflected in the updated OpenAPI spec
-(`api-docs (1).json`, 2026-08-25). The description changed from *"204 when there is
+(`api-docs (1).json`, 2026-08-25). The description changed from _"204 when there is
 nothing to draw, including after a contest-day run, which is scored and stored but
-deliberately shows no board"* to *"The most recently submitted run for the version,
-contest day included. 204 only when the patient has never submitted one."*
+deliberately shows no board"_ to _"The most recently submitted run for the version,
+contest day included. 204 only when the patient has never submitted one."_
 
 Frontend already reads from this endpoint on `/home` and had a sessionStorage
 carry-over as a workaround for the old behavior — kept in place, but now only as a
@@ -80,7 +80,7 @@ documented there as "server-decided, never recompute client-side."
 
 **What's missing:** The schema for the real dome already exists in the backend's own
 OpenAPI spec — `BoardResponse`/`BoardSectionResponse` — but every operation that
-returns it is tagged *Patient Screenings* and lives under `/v1/patients/screenings/**`.
+returns it is tagged _Patient Screenings_ and lives under `/v1/patients/screenings/**`.
 There is no equivalent route for a provider or curator to fetch the same board for a
 given patient/result. The closest provider/curator-reachable thing is
 `POST /v1/patient-results/nsmq/care-cases/{id}/clear` (write-only, requires

@@ -29,7 +29,9 @@ export function captureReferralFromUrl(): void {
 export function getReferralHandle(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return normalizeReferralHandle(sessionStorage.getItem(REFERRAL_STORAGE_KEY));
+    return normalizeReferralHandle(
+      sessionStorage.getItem(REFERRAL_STORAGE_KEY),
+    );
   } catch {
     return null;
   }

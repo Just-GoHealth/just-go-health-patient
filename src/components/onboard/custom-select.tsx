@@ -5,13 +5,7 @@ import { useEffect, useRef, useState } from "react";
 // options[i] is still the real value stored/compared everywhere (e.g.
 // MONTHS.indexOf(dobMonth) elsewhere) - mobileLabels only swaps what's
 // *displayed* on narrow screens, parallel by index, never the value itself
-function OptionLabel({
-  full,
-  mobile,
-}: {
-  full: string;
-  mobile?: string;
-}) {
+function OptionLabel({ full, mobile }: { full: string; mobile?: string }) {
   if (!mobile) return <>{full}</>;
   return (
     <>
@@ -87,7 +81,9 @@ export function CustomSelect({
         onClick={() => setOpen((o) => !o)}
         className="border-line focus:border-gold/60 flex w-full items-center justify-between rounded-xl border bg-white/5 px-4 py-3 text-left text-base outline-none"
       >
-        <span className={`min-w-0 truncate ${value ? "text-txt" : "text-muted"}`}>
+        <span
+          className={`min-w-0 truncate ${value ? "text-txt" : "text-muted"}`}
+        >
           {value ? (
             <OptionLabel
               full={value}

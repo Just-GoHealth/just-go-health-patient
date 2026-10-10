@@ -70,13 +70,12 @@ function HomePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mock = MOCK_ENABLED ? searchParams.get("mock") : null;
-  const [membership, setMembership] = useState<MembershipResponse | null>(
-    () =>
-      mock
-        ? mock === "empty" || mock === "board" || mock === "board1"
-          ? { ...MOCK_MEMBERSHIP, screeningDue: false }
-          : MOCK_MEMBERSHIP
-        : null,
+  const [membership, setMembership] = useState<MembershipResponse | null>(() =>
+    mock
+      ? mock === "empty" || mock === "board" || mock === "board1"
+        ? { ...MOCK_MEMBERSHIP, screeningDue: false }
+        : MOCK_MEMBERSHIP
+      : null,
   );
   // the latest result board - this page IS the day view once a board
   // exists, not a screen you pass through on the way back from /screening.
@@ -88,7 +87,10 @@ function HomePageInner() {
     mock === "board"
       ? MOCK_SCREENING_BOARD
       : mock === "board1"
-        ? { ...MOCK_SCREENING_BOARD, sections: MOCK_SCREENING_BOARD.sections?.slice(0, 1) }
+        ? {
+            ...MOCK_SCREENING_BOARD,
+            sections: MOCK_SCREENING_BOARD.sections?.slice(0, 1),
+          }
         : null,
   );
   const [profile, setProfile] = useState<HomeProfileResponse | null>(() =>
@@ -172,7 +174,10 @@ function HomePageInner() {
     } catch (e) {
       if (e instanceof ApiError && e.code === "SCREENING_WINDOW_CLOSED") {
         showToast("This window has closed — a new check isn't available.");
-      } else if (e instanceof ApiError && e.code === "SCREENING_NOT_SUBMITTED") {
+      } else if (
+        e instanceof ApiError &&
+        e.code === "SCREENING_NOT_SUBMITTED"
+      ) {
         // the current attempt is still open rather than submitted - just
         // go resume it instead of treating this as a failure
         router.push("/screening");
@@ -326,7 +331,9 @@ function HomePageInner() {
                 />
               )}
               <div className="text-left">
-                <p className="font-bold">{membership?.campusName ?? "Your team"}</p>
+                <p className="font-bold">
+                  {membership?.campusName ?? "Your team"}
+                </p>
                 {membership?.countdown?.text && (
                   <p
                     className={`text-xs font-semibold ${
@@ -359,7 +366,7 @@ function HomePageInner() {
                 type="button"
                 onClick={() => setConfirmOpen(true)}
                 disabled={loggingOut}
-                className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 whitespace-nowrap transition-colors hover:text-white disabled:opacity-60"
+                className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold whitespace-nowrap text-white/70 transition-colors hover:text-white disabled:opacity-60"
               >
                 {loggingOut ? "…" : "Log out"}
               </button>

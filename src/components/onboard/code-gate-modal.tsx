@@ -74,7 +74,9 @@ export function CodeGateModal({
 
               <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
                 Join{" "}
-                <span className="text-[#8f6716]">{campusName ?? "your school"}</span>
+                <span className="text-[#8f6716]">
+                  {campusName ?? "your school"}
+                </span>
               </h1>
               <div className="mt-3 h-px w-16 bg-gradient-to-r from-[#e8d4ad] to-[#b8862e]" />
               <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-black/70">

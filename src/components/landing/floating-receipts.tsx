@@ -59,9 +59,9 @@ export function FloatingReceipts({
     }
 
     function pop() {
-      const freeLanes = lanes.map((_, i) => i).filter(
-        (i) => !occupiedLanes.current.has(i),
-      );
+      const freeLanes = lanes
+        .map((_, i) => i)
+        .filter((i) => !occupiedLanes.current.has(i));
       if (!freeLanes.length) return; // every lane taken - wait for one to clear
 
       const lane = freeLanes[Math.floor(Math.random() * freeLanes.length)];

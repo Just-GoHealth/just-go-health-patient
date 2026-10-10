@@ -116,10 +116,7 @@ const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3));
 function smartName(raw: string): string {
   let v = raw.replace(/[^a-zA-ZÀ-ɏ' -]/g, "");
   v = v.replace(/\s{2,}/g, " ").replace(/^\s+/, "");
-  v = v.replace(
-    /(^\s*[a-zA-ZÀ-ɏ])|(\s+[a-zA-ZÀ-ɏ])/g,
-    (m) => m.toUpperCase(),
-  );
+  v = v.replace(/(^\s*[a-zA-ZÀ-ɏ])|(\s+[a-zA-ZÀ-ɏ])/g, (m) => m.toUpperCase());
   return v;
 }
 
@@ -824,7 +821,10 @@ function OnboardPageInner() {
 
   // crops the preview to a square at the chosen zoom, matching what's shown
   // in the circular frame, rather than uploading the original untouched file
-  function cropPhotoToBlob(img: HTMLImageElement, zoom: number): Promise<Blob | null> {
+  function cropPhotoToBlob(
+    img: HTMLImageElement,
+    zoom: number,
+  ): Promise<Blob | null> {
     const size = 480;
     const canvas = document.createElement("canvas");
     canvas.width = size;
@@ -871,7 +871,9 @@ function OnboardPageInner() {
         setStep("signin");
         return;
       }
-      setError(e instanceof ApiError ? e.message : "Couldn't upload that photo");
+      setError(
+        e instanceof ApiError ? e.message : "Couldn't upload that photo",
+      );
     } finally {
       setLoading(false);
     }
@@ -1139,9 +1141,7 @@ function OnboardPageInner() {
         return {
           show: true,
           enabled:
-            !loading &&
-            newPassword.length > 0 &&
-            confirmNewPassword.length > 0,
+            !loading && newPassword.length > 0 && confirmNewPassword.length > 0,
           label: loading ? "Saving…" : "Save password",
           onClick: submitResetPassword,
         };
@@ -1669,8 +1669,7 @@ function OnboardPageInner() {
                     style={{ fontSize: "clamp(0.9rem, 1.5vw, 1.05rem)" }}
                   >
                     A quick photo so we know it&apos;s you,{" "}
-                    <strong className="text-txt">{nickname || "there"}</strong>
-                    .
+                    <strong className="text-txt">{nickname || "there"}</strong>.
                   </p>
 
                   <input
@@ -1685,7 +1684,7 @@ function OnboardPageInner() {
                     <button
                       type="button"
                       onClick={pickPhoto}
-                      className={`photo-circle${photoPreviewUrl ? " filled" : ""}`}
+                      className={`photo-circle${photoPreviewUrl ? "filled" : ""}`}
                     >
                       {photoPreviewUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element -- object URL preview, not a static/remote asset
@@ -1705,7 +1704,7 @@ function OnboardPageInner() {
                       )}
                     </button>
 
-                    <div className={`zoom-row${photoPreviewUrl ? " on" : ""}`}>
+                    <div className={`zoom-row${photoPreviewUrl ? "on" : ""}`}>
                       <button
                         type="button"
                         className="zoom-sign"
@@ -1738,9 +1737,7 @@ function OnboardPageInner() {
                       </button>
                     </div>
 
-                    <p className="text-no min-h-[18px] text-sm">
-                      {error}
-                    </p>
+                    <p className="text-no min-h-[18px] text-sm">{error}</p>
 
                     {photoPreviewUrl && (
                       <button
@@ -1782,94 +1779,102 @@ function OnboardPageInner() {
                       {campuses.map((c) => {
                         const bgUrl = c.logo ?? c.bannerPhoto;
                         return (
-                        <button
-                          key={c.campusId}
-                          type="button"
-                          onClick={() => pickCampus(c)}
-                          disabled={loading}
-                          className="border-gold group relative aspect-square overflow-hidden rounded-2xl border-[1.65px] text-left text-white shadow-[0_8px_22px_rgba(0,0,0,.45)] transition-transform duration-150 hover:-translate-y-1 hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-60"
-                        >
-                          <div
-                            className="absolute inset-0 bg-[#222] bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.09]"
-                            style={
-                              bgUrl
-                                ? { backgroundImage: `url('${bgUrl}')` }
-                                : { background: CAMPUS_FALLBACK_BG }
-                            }
-                          />
-                          <div
-                            className="absolute inset-0"
-                            style={{
-                              background:
-                                "linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.78) 75%)",
-                            }}
-                          />
-                          {c.state === "out" && (
+                          <button
+                            key={c.campusId}
+                            type="button"
+                            onClick={() => pickCampus(c)}
+                            disabled={loading}
+                            className="border-gold group relative aspect-square overflow-hidden rounded-2xl border-[1.65px] text-left text-white shadow-[0_8px_22px_rgba(0,0,0,.45)] transition-transform duration-150 hover:-translate-y-1 hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-60"
+                          >
                             <div
-                              className="absolute inset-0 z-[2]"
+                              className="absolute inset-0 bg-[#222] bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.09]"
+                              style={
+                                bgUrl
+                                  ? { backgroundImage: `url('${bgUrl}')` }
+                                  : { background: CAMPUS_FALLBACK_BG }
+                              }
+                            />
+                            <div
+                              className="absolute inset-0"
                               style={{
                                 background:
-                                  "linear-gradient(180deg, rgba(43,18,16,.28), rgba(43,18,16,.52))",
+                                  "linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.78) 75%)",
                               }}
                             />
-                          )}
+                            {c.state === "out" && (
+                              <div
+                                className="absolute inset-0 z-[2]"
+                                style={{
+                                  background:
+                                    "linear-gradient(180deg, rgba(43,18,16,.28), rgba(43,18,16,.52))",
+                                }}
+                              />
+                            )}
 
-                          {/* a shared flex row, not two independently-positioned
+                            {/* a shared flex row, not two independently-positioned
                               pills - so a long whenLabel shrinks/truncates
                               instead of overlapping the member-count pill */}
-                          <div className="absolute inset-x-3 top-3 z-[6] flex items-start justify-between gap-2">
-                            {typeof c.memberCount === "number" &&
-                            c.memberCount > 0 ? (
-                              <div
-                                className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-extrabold"
-                                style={{
-                                  background: "#c9f0dd",
-                                  color: "#0c3d26",
-                                  borderColor: "rgba(30,143,87,.45)",
-                                }}
-                              >
-                                <span style={{ filter: "saturate(0) brightness(.35)" }}>
-                                  ⭐
-                                </span>
-                                <span>{c.memberCount}</span>
-                              </div>
-                            ) : (
-                              <span />
-                            )}
+                            <div className="absolute inset-x-3 top-3 z-[6] flex items-start justify-between gap-2">
+                              {typeof c.memberCount === "number" &&
+                              c.memberCount > 0 ? (
+                                <div
+                                  className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-extrabold"
+                                  style={{
+                                    background: "#c9f0dd",
+                                    color: "#0c3d26",
+                                    borderColor: "rgba(30,143,87,.45)",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      filter: "saturate(0) brightness(.35)",
+                                    }}
+                                  >
+                                    ⭐
+                                  </span>
+                                  <span>{c.memberCount}</span>
+                                </div>
+                              ) : (
+                                <span />
+                              )}
 
-                            {c.whenLabel && (
-                              <div
-                                className="inline-flex min-w-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-extrabold"
-                                style={campusPillStyle(c.state)}
-                              >
-                                <span
-                                  className="size-[5px] shrink-0 rounded-full"
-                                  style={campusDotStyle(c.state)}
-                                />
-                                <span className="truncate">{c.whenLabel}</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="absolute right-0 bottom-[18px] left-0 z-[2] px-4">
-                            <div
-                              className={`text-xl font-bold ${c.state === "out" ? "opacity-90" : ""}`}
-                            >
-                              {c.fullName ?? c.nickname}
+                              {c.whenLabel && (
+                                <div
+                                  className="inline-flex min-w-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-extrabold"
+                                  style={campusPillStyle(c.state)}
+                                >
+                                  <span
+                                    className="size-[5px] shrink-0 rounded-full"
+                                    style={campusDotStyle(c.state)}
+                                  />
+                                  <span className="truncate">
+                                    {c.whenLabel}
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                            {c.fullName && c.nickname && c.nickname !== c.fullName && (
-                              <div className="text-sm text-white/70 italic">
-                                {c.nickname}
+
+                            <div className="absolute right-0 bottom-[18px] left-0 z-[2] px-4">
+                              <div
+                                className={`text-xl font-bold ${c.state === "out" ? "opacity-90" : ""}`}
+                              >
+                                {c.fullName ?? c.nickname}
+                              </div>
+                              {c.fullName &&
+                                c.nickname &&
+                                c.nickname !== c.fullName && (
+                                  <div className="text-sm text-white/70 italic">
+                                    {c.nickname}
+                                  </div>
+                                )}
+                            </div>
+
+                            {pickingCampusId === c.campusId && (
+                              <div className="absolute inset-0 z-[7] flex items-center justify-center bg-black/50">
+                                <div className="border-gold size-8 animate-spin rounded-full border-2 border-t-transparent" />
                               </div>
                             )}
-                          </div>
-
-                          {pickingCampusId === c.campusId && (
-                            <div className="absolute inset-0 z-[7] flex items-center justify-center bg-black/50">
-                              <div className="border-gold size-8 animate-spin rounded-full border-2 border-t-transparent" />
-                            </div>
-                          )}
-                        </button>
+                          </button>
                         );
                       })}
                     </div>
@@ -1877,7 +1882,6 @@ function OnboardPageInner() {
                   {error && <p className="text-no mt-4 text-sm">{error}</p>}
                 </div>
               )}
-
 
               {step === "done" && (
                 <div className="text-center">

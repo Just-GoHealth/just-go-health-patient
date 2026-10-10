@@ -367,7 +367,13 @@ export type LockinVersionResponse = {
   endsAt?: string;
   inPeriod?: boolean;
   campusTypes?: string[];
-  windows?: { kind?: string; label?: string; heading?: string; cardLabel?: string; cardValue?: string }[];
+  windows?: {
+    kind?: string;
+    label?: string;
+    heading?: string;
+    cardLabel?: string;
+    cardValue?: string;
+  }[];
   assentText?: string;
   assentTextVersion?: string;
 };

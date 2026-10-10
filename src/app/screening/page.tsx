@@ -199,8 +199,8 @@ function ScreeningPageInner() {
   const [profile, setProfile] = useState<HomeProfileResponse | null>(() =>
     mock ? { nickname: "You" } : null,
   );
-  const [membership, setMembership] = useState<MembershipResponse | null>(
-    () => (mock ? { campusName: "Your School" } : null),
+  const [membership, setMembership] = useState<MembershipResponse | null>(() =>
+    mock ? { campusName: "Your School" } : null,
   );
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -390,7 +390,10 @@ function ScreeningPageInner() {
     setTimeout(() => fly.remove(), 560);
   }
 
-  async function pick(optionIndex: number, e: React.MouseEvent<HTMLButtonElement>) {
+  async function pick(
+    optionIndex: number,
+    e: React.MouseEvent<HTMLButtonElement>,
+  ) {
     if (!run?.screeningId || !current?.itemCode || answering) return;
     setAnswering(true);
     const idx = index;
@@ -417,7 +420,11 @@ function ScreeningPageInner() {
           return;
         }
       } else if (isLast) {
-        setBoard(mock === "emergency" ? MOCK_SCREENING_BOARD_EMERGENCY : MOCK_SCREENING_BOARD);
+        setBoard(
+          mock === "emergency"
+            ? MOCK_SCREENING_BOARD_EMERGENCY
+            : MOCK_SCREENING_BOARD,
+        );
         setPhase("board");
         return;
       }
@@ -478,7 +485,12 @@ function ScreeningPageInner() {
         />
         <div className="mh-screen">
           <div className="mh-loading">
-            <svg className="mh-load-batt" width="150" height="74" viewBox="0 0 150 74">
+            <svg
+              className="mh-load-batt"
+              width="150"
+              height="74"
+              viewBox="0 0 150 74"
+            >
               <rect
                 x="3"
                 y="8"
@@ -546,8 +558,7 @@ function ScreeningPageInner() {
           <div className="mx-auto flex max-w-[640px] flex-col items-center text-center">
             <p className="text-txt text-lg font-bold">You&apos;re all set.</p>
             <p className="text-muted mt-1 text-sm">
-              We&apos;ve opened your day — come back whenever you&apos;re
-              ready.
+              We&apos;ve opened your day — come back whenever you&apos;re ready.
             </p>
             <button
               type="button"
@@ -591,130 +602,141 @@ function ScreeningPageInner() {
         onLogoutClick={() => setLogoutConfirmOpen(true)}
       />
       <div className="mh-screen">
-      <div className="mh-focus" ref={focusRef}>
-        <div className="f-kick">
-          <span className="f-sec">{current.section ?? "Mental Health"}</span>
-        </div>
+        <div className="mh-focus" ref={focusRef}>
+          <div className="f-kick">
+            <span className="f-sec">{current.section ?? "Mental Health"}</span>
+          </div>
 
-        {/* the contest countdown - shown here regardless of whether this is
+          {/* the contest countdown - shown here regardless of whether this is
             the student's first check or a retake, same data as the home
             page's countdown pill */}
-        {membership?.countdown?.text && (
-          <div className="f-when">
-            <span className="f-when-pill">{membership.countdown.text}</span>
-          </div>
-        )}
+          {membership?.countdown?.text && (
+            <div className="f-when">
+              <span className="f-when-pill">{membership.countdown.text}</span>
+            </div>
+          )}
 
-        <div className="f-title">
-          {current.shortName ?? current.name}
-          {current.help && (
-            <button
-              type="button"
-              className={`huh-btn${huhOn ? " okay" : ""}`}
-              onClick={toggleHuh}
+          <div className="f-title">
+            {current.shortName ?? current.name}
+            {current.help && (
+              <button
+                type="button"
+                className={`huh-btn${huhOn ? "okay" : ""}`}
+                onClick={toggleHuh}
+              >
+                {huhOn ? "💡 OKAY." : "🤨 HUH?"}
+              </button>
+            )}
+          </div>
+
+          <div className={`f-q${huhOn ? "is-huh" : ""}${qflip ? "qflip" : ""}`}>
+            {huhOn ? current.help : current.question}
+          </div>
+
+          <div className="mh-opts">
+            {(current.options ?? []).map((opt, oi) => (
+              <button
+                key={oi}
+                type="button"
+                disabled={answering}
+                className={`mh-opt${answers[index] === (opt.index ?? oi) ? "sel" : ""}`}
+                onClick={(e) => pick(opt.index ?? oi, e)}
+                onMouseEnter={(e) =>
+                  opt.sub && showTip(e.currentTarget, opt.sub)
+                }
+                onMouseLeave={() => setTip(null)}
+                onFocus={(e) => opt.sub && showTip(e.currentTarget, opt.sub)}
+                onBlur={() => setTip(null)}
+              >
+                <span className="em">{opt.emoji}</span>
+                <span>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {tip && (
+            <div
+              className="mh-tip on"
+              style={{ left: tip.x, top: tip.y, ["--tipx" as string]: "50%" }}
             >
-              {huhOn ? "💡 OKAY." : "🤨 HUH?"}
-            </button>
+              {tip.text}
+            </div>
           )}
         </div>
 
-        <div className={`f-q${huhOn ? " is-huh" : ""}${qflip ? " qflip" : ""}`}>
-          {huhOn ? current.help : current.question}
-        </div>
-
-        <div className="mh-opts">
-          {(current.options ?? []).map((opt, oi) => (
-            <button
-              key={oi}
-              type="button"
-              disabled={answering}
-              className={`mh-opt${answers[index] === (opt.index ?? oi) ? " sel" : ""}`}
-              onClick={(e) => pick(opt.index ?? oi, e)}
-              onMouseEnter={(e) => opt.sub && showTip(e.currentTarget, opt.sub)}
-              onMouseLeave={() => setTip(null)}
-              onFocus={(e) => opt.sub && showTip(e.currentTarget, opt.sub)}
-              onBlur={() => setTip(null)}
-            >
-              <span className="em">{opt.emoji}</span>
-              <span>{opt.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {tip && (
-          <div
-            className="mh-tip on"
-            style={{ left: tip.x, top: tip.y, ["--tipx" as string]: "50%" }}
-          >
-            {tip.text}
+        <div className="mh-bar">
+          <div className="mh-bar-head">
+            <div className="mh-bar-title">
+              Your Mental Health · {VERSION_LABEL}
+            </div>
+            <div className="mh-tracker">
+              <span>{Math.min(index + 1, items.length)}</span>
+              <small>/{items.length}</small>
+            </div>
+            <div className="mh-bar-batt">
+              <svg width="52" height="26" viewBox="0 0 150 74">
+                <rect
+                  x="3"
+                  y="8"
+                  width="128"
+                  height="58"
+                  rx="14"
+                  fill="rgba(0,0,0,.35)"
+                  stroke="#fff"
+                  strokeWidth="3"
+                />
+                <rect
+                  x="134"
+                  y="26"
+                  width="11"
+                  height="22"
+                  rx="4"
+                  fill="#fff"
+                />
+                <rect
+                  x="10"
+                  y="15"
+                  width={Math.round(111 * (battPct / 100))}
+                  height="44"
+                  rx="8"
+                  fill={scrColor(battPct)}
+                  style={{
+                    transition:
+                      "width .55s cubic-bezier(.34,1.56,.64,1), fill .45s ease",
+                  }}
+                />
+              </svg>
+              <span>{battPct}%</span>
+            </div>
           </div>
-        )}
-      </div>
-
-      <div className="mh-bar">
-        <div className="mh-bar-head">
-          <div className="mh-bar-title">Your Mental Health · {VERSION_LABEL}</div>
-          <div className="mh-tracker">
-            <span>{Math.min(index + 1, items.length)}</span>
-            <small>/{items.length}</small>
-          </div>
-          <div className="mh-bar-batt">
-            <svg width="52" height="26" viewBox="0 0 150 74">
-              <rect
-                x="3"
-                y="8"
-                width="128"
-                height="58"
-                rx="14"
-                fill="rgba(0,0,0,.35)"
-                stroke="#fff"
-                strokeWidth="3"
-              />
-              <rect x="134" y="26" width="11" height="22" rx="4" fill="#fff" />
-              <rect
-                x="10"
-                y="15"
-                width={Math.round(111 * (battPct / 100))}
-                height="44"
-                rx="8"
-                fill={scrColor(battPct)}
-                style={{
-                  transition:
-                    "width .55s cubic-bezier(.34,1.56,.64,1), fill .45s ease",
-                }}
-              />
-            </svg>
-            <span>{battPct}%</span>
+          <div className="mh-strip">
+            {items.map((it, i) => {
+              const answered = answers[i] != null;
+              const isActive = i === index;
+              const emoji = answered
+                ? (it.options?.[answers[i] as number]?.emoji ?? "•")
+                : isActive
+                  ? "◆"
+                  : "•";
+              return (
+                <button
+                  key={it.itemCode ?? i}
+                  type="button"
+                  ref={(el) => {
+                    stripRefs.current[i] = el;
+                    if (isActive) activeItemRef.current = el;
+                  }}
+                  disabled={i > furthest}
+                  className={`mh-item ${isActive ? "active" : answered ? "done" : "pending"}`}
+                  onClick={() => goto(i)}
+                >
+                  <span className="ring">{emoji}</span>
+                  <span className="nm">{it.shortName ?? it.name}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
-        <div className="mh-strip">
-          {items.map((it, i) => {
-            const answered = answers[i] != null;
-            const isActive = i === index;
-            const emoji = answered
-              ? (it.options?.[answers[i] as number]?.emoji ?? "•")
-              : isActive
-                ? "◆"
-                : "•";
-            return (
-              <button
-                key={it.itemCode ?? i}
-                type="button"
-                ref={(el) => {
-                  stripRefs.current[i] = el;
-                  if (isActive) activeItemRef.current = el;
-                }}
-                disabled={i > furthest}
-                className={`mh-item ${isActive ? "active" : answered ? "done" : "pending"}`}
-                onClick={() => goto(i)}
-              >
-                <span className="ring">{emoji}</span>
-                <span className="nm">{it.shortName ?? it.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
       </div>
 
       <LogoutConfirmModal

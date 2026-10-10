@@ -102,9 +102,9 @@ export default function VersionsPage() {
               Welcome to <em>JustGo Health</em>
             </h1>
             <p className="vs-lede">
-              You&rsquo;ve been invited to experience <b>LOCK IN</b>. Choose
-              the version of LOCK IN that&rsquo;s right for you. JustGo
-              Health is currently available by invitation only.
+              You&rsquo;ve been invited to experience <b>LOCK IN</b>. Choose the
+              version of LOCK IN that&rsquo;s right for you. JustGo Health is
+              currently available by invitation only.
             </p>
           </header>
 
@@ -112,9 +112,9 @@ export default function VersionsPage() {
             {VERSIONS.map((v, i) => (
               <div
                 key={v.id}
-                className={`tile-unit t-${v.theme}${v.locked ? " locked" : ""}${
-                  pickedId === v.id ? " picked" : ""
-                }${pickedId && pickedId !== v.id ? " dimmed" : ""}`}
+                className={`tile-unit t-${v.theme}${v.locked ? "locked" : ""}${
+                  pickedId === v.id ? "picked" : ""
+                }${pickedId && pickedId !== v.id ? "dimmed" : ""}`}
                 style={{ "--dd": `${i * 0.3}s` } as React.CSSProperties}
                 role={v.locked ? undefined : "button"}
                 tabIndex={v.locked ? undefined : 0}
