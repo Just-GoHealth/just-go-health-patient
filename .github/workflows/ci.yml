@@ -1,0 +1,117 @@
+# CI quality gate (remediation tracker item 12) and production deploy.
+#
+# - `checks` runs on every push to any branch and on every pull request.
+# - `deploy` runs only after `checks` passes on a push to `main`, and is the
+#   only thing that deploys: Vercel's own Git deployments are switched off in
+#   vercel.json, so dev/staging/feature branches never deploy.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   VERCEL_TOKEN       Vercel access token with access to the project
+#   VERCEL_ORG_ID      "orgId" from .vercel/project.json after `vercel link`
+#   VERCEL_PROJECT_ID  "projectId" from .vercel/project.json
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, typecheck, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # typedRoutes types live in .next/ (not committed); tsc needs them.
+      - name: Generate route types
+        run: pnpm exec next typegen
+
+      - name: Lint
+        run: pnpm exec eslint .
+
+      - name: Format
+        run: pnpm exec prettier --check .
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
+
+      # No test suite yet; added with remediation item 10.
+
+      - name: Build
+        run: pnpm build
+
+  deploy:
+    name: Deploy to Vercel (production)
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      # Until the Vercel secrets are added, skip (with a warning) instead of
+      # failing every push to main.
+      - name: Check Vercel secrets
+        id: secrets
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::warning::VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID not set - skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ready == 'true'
+
+      - uses: pnpm/action-setup@v4
+        if: steps.secrets.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Vercel CLI
+        if: steps.secrets.outputs.ready == 'true'
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        if: steps.secrets.outputs.ready == 'true'
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build
+        if: steps.secrets.outputs.ready == 'true'
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy
+        if: steps.secrets.outputs.ready == 'true'
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
