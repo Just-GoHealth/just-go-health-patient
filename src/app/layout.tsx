@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Space_Grotesk } from "next/font/google";
+import { Toaster } from "@just-gohealth/ui";
 import "./globals.css";
 import { ReferralCapture } from "@/components/shared/referral-capture";
+import { SessionConfig } from "@/components/shared/session-config";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
@@ -15,10 +17,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      className={`dark ${spaceGrotesk.variable} h-full antialiased`}
+    >
       <body className="flex min-h-full flex-col font-sans">
         <ReferralCapture />
+        <SessionConfig />
         {children}
+        <Toaster />
       </body>
     </html>
   );

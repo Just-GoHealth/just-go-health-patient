@@ -2,18 +2,16 @@
 // it shows only on their first visit rather than on every load of "/"
 export const VERSIONS_SEEN_KEY = "justgo_versions_seen";
 
-// localStorage: onboarding wizard progress, written by /onboard. /home clears
-// it on logout - leaving stale progress cached would let a later /onboard
-// visit restore straight past the sign-in screen.
-export const ONBOARD_STORAGE_KEY = "onboard_progress_v1";
-
-// sessionStorage: the board returned by the screening submit, stashed by
-// /screening and read once by /home. GET /patients/screenings/latest returns
-// the just-submitted board for every window (contest day included), so this
-// is only a bridge against brief propagation lag between that write and
-// /home's read right after the redirect.
-export const CARRIED_BOARD_KEY = "screening_carried_board_v1";
+// localStorage: onboarding wizard progress (pre-sign-in fields only), written
+// by /onboard. Cleared on sign-out - after sign-in the server's `me.next`
+// decides the step, never this.
+export const ONBOARD_STORAGE_KEY = "onboard_progress_v2";
 
 // sessionStorage: referral handle from `?ref=` on the entry URL (set by the
-// dwen-wo-ho landing page's "Lock In with @handle" button), sent with signup.
+// dwen-wo-ho landing page's "Lock In with @handle" button). Captured only:
+// the v2 backend has no referral field, so it is never sent.
 export const REFERRAL_STORAGE_KEY = "justgo_referral_v1";
+
+// sessionStorage: NSMQ version code from `?v=` on the entry URL, enrolled in
+// after sign-in (see src/lib/version-link.ts).
+export const VERSION_LINK_STORAGE_KEY = "justgo_version_v1";

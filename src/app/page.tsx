@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { Button, Logo } from "@just-gohealth/ui";
 import {
   HandIcon,
   LockIcon,
@@ -14,10 +15,11 @@ import {
 } from "@/components/landing/icons";
 import { FloatingReceipts } from "@/components/landing/floating-receipts";
 import { PrivacyGateModal } from "@/components/landing/privacy-gate-modal";
-import { ApiError, getVersionMembership } from "@/lib/api";
+import { ctaButtonClass } from "@/components/shared/cta";
 import { VERSIONS_SEEN_KEY } from "@/lib/constants";
-
-const VERSION_CODE = "nsmq2026";
+import { getMe } from "@/lib/v2/auth";
+import { isSignedOut } from "@/lib/v2/errors";
+import { DEFAULT_VERSION_CODE, rememberVersionCode } from "@/lib/version-link";
 
 const overshoot = { type: "spring" as const, stiffness: 300, damping: 16 };
 
@@ -47,17 +49,18 @@ export default function Home() {
     router.push("/onboard");
   }
 
-  // returning users with a session already shouldn't see the marketing
-  // privacy gate at all — /onboard's own session-check routes them straight
-  // to wherever they left off (campus picking, the code gate, or in). Only a
-  // genuinely unauthenticated 401/403 means this is a first-time visitor.
+  // this button is an NSMQ link: after sign-in /onboard enrolls the student
+  // in the version. Returning users with a session already shouldn't see the
+  // marketing privacy gate at all — /onboard's own session check routes them
+  // by `me.next`. Only NOT_SIGNED_IN means this is a first-time visitor.
   async function handleLockInClick() {
+    rememberVersionCode(DEFAULT_VERSION_CODE);
     setCheckingSession(true);
     try {
-      await getVersionMembership(VERSION_CODE);
+      await getMe();
       router.push("/onboard");
     } catch (e) {
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+      if (isSignedOut(e)) {
         setModalOpen(true);
       } else {
         router.push("/onboard");
@@ -142,13 +145,9 @@ export default function Home() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ ...overshoot, delay: 0.2 }}
           >
-            <Image
-              src="/images/logo.webp"
-              alt="JustGo Health"
-              width={384}
-              height={67}
-              priority
-              className="h-5 w-auto object-contain invert sm:h-7 md:h-8"
+            <Logo
+              variant="light"
+              className="h-5 w-auto object-contain sm:h-7 md:h-8"
             />
           </motion.button>
         </motion.nav>
@@ -170,39 +169,43 @@ export default function Home() {
             Designed with clinical experts and NSMQ alumni.
           </motion.p>
 
-          <motion.button
-            type="button"
-            onClick={handleLockInClick}
-            disabled={checkingSession}
-            className="land-cta-btn relative overflow-hidden disabled:opacity-70"
-            initial={{ opacity: 0, y: 12, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ ...overshoot, delay: 0.42 }}
+          <Button
+            asChild
+            className={`${ctaButtonClass} relative overflow-hidden disabled:opacity-70`}
           >
-            <span className="inline-flex items-center gap-[0.5em]">
-              <LockIcon className="size-[0.9em] shrink-0" />
-              {checkingSession ? "One sec…" : "LOCK IN FOR NSMQ 2026"}
-            </span>
-            <motion.span
-              aria-hidden
-              className="pointer-events-none absolute top-[-40%] left-0 h-[180%] w-[45%]"
-              style={{
-                backgroundImage:
-                  "linear-gradient(100deg, rgba(255,255,255,0), rgba(255,255,255,0.85), rgba(255,255,255,0))",
-              }}
-              initial={{ opacity: 0, x: "-40%" }}
-              animate={{
-                opacity: [0, 0.55, 0, 0],
-                x: ["-40%", "32%", "140%", "140%"],
-              }}
-              transition={{
-                duration: 2.6,
-                delay: 2.1,
-                ease: "easeOut",
-                times: [0, 0.18, 0.45, 1],
-              }}
-            />
-          </motion.button>
+            <motion.button
+              type="button"
+              onClick={handleLockInClick}
+              disabled={checkingSession}
+              initial={{ opacity: 0, y: 12, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ ...overshoot, delay: 0.42 }}
+            >
+              <span className="inline-flex items-center gap-[0.5em]">
+                <LockIcon className="size-[0.9em] shrink-0" />
+                {checkingSession ? "One sec…" : "LOCK IN FOR NSMQ 2026"}
+              </span>
+              <motion.span
+                aria-hidden
+                className="pointer-events-none absolute top-[-40%] left-0 h-[180%] w-[45%]"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(100deg, rgba(255,255,255,0), rgba(255,255,255,0.85), rgba(255,255,255,0))",
+                }}
+                initial={{ opacity: 0, x: "-40%" }}
+                animate={{
+                  opacity: [0, 0.55, 0, 0],
+                  x: ["-40%", "32%", "140%", "140%"],
+                }}
+                transition={{
+                  duration: 2.6,
+                  delay: 2.1,
+                  ease: "easeOut",
+                  times: [0, 0.18, 0.45, 1],
+                }}
+              />
+            </motion.button>
+          </Button>
 
           <motion.h1
             className="font-extrabold tracking-tight"

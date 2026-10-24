@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { VERSIONS_SEEN_KEY } from "@/lib/constants";
+import { rememberVersionCode } from "@/lib/version-link";
 import "./versions.css";
 
 type VersionTile = {
@@ -66,6 +67,8 @@ export default function VersionsPage() {
   function pick(v: VersionTile) {
     if (v.locked || pickedId) return;
     setPickedId(v.id);
+    // enrolled in after sign-in, like a `?v=` link
+    rememberVersionCode(v.id);
     try {
       localStorage.setItem(VERSIONS_SEEN_KEY, "1");
     } catch {

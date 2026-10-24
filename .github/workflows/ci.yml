@@ -1,9 +1,9 @@
 # CI quality gate (remediation tracker item 12) and production deploy.
 #
 # - `checks` runs on every push to any branch and on every pull request.
-# - `deploy` runs only after `checks` passes on a push to `main`, and is the
-#   only thing that deploys: Vercel's own Git deployments are switched off in
-#   vercel.json, so dev/staging/feature branches never deploy.
+# - `deploy` runs only after `checks` passes on a push to `main` (production) or
+#   `staging` (staging URL). It is the only thing that deploys: Vercel's own Git
+#   deployments are switched off in vercel.json, so dev and feature branches never deploy.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   VERCEL_TOKEN       Vercel access token with access to the project
@@ -23,6 +23,8 @@ concurrency:
 
 permissions:
   contents: read
+  # Install @just-gohealth/ui from GitHub Packages with the job's GITHUB_TOKEN.
+  packages: read
 
 jobs:
   checks:
@@ -42,6 +44,8 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # typedRoutes types live in .next/ (not committed); tsc needs them.
       - name: Generate route types
@@ -63,22 +67,34 @@ jobs:
         run: pnpm build
 
   deploy:
-    name: Deploy to Vercel (production)
+    # main → Vercel production (prod backend). staging → a Vercel preview deployment
+    # aliased to a stable staging URL (staging backend). Other branches never deploy.
+    # Backend URLs and other env vars live in the Vercel project, per environment:
+    #   Production: NEXT_PUBLIC_API_BASE_URL=https://justgo.up.railway.app
+    #   Preview:    NEXT_PUBLIC_API_BASE_URL=https://jgohealth-backend-staging.up.railway.app
+    name: Deploy to Vercel (${{ github.ref_name == 'main' && 'production' || 'staging' }})
     needs: checks
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: production
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      url: ${{ steps.deploy.outputs.url }}
     concurrency:
-      group: deploy-production
+      group: deploy-${{ github.ref_name }}
       cancel-in-progress: false
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      # vercel build installs dependencies, including @just-gohealth/ui.
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Stable staging address (repo variable VERCEL_STAGING_ALIAS overrides).
+      STAGING_ALIAS: ${{ vars.VERCEL_STAGING_ALIAS || 'justgo-patient-staging.vercel.app' }}
+      TARGET: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
     steps:
       # Until the Vercel secrets are added, skip (with a warning) instead of
-      # failing every push to main.
+      # failing every push.
       - name: Check Vercel secrets
         id: secrets
         run: |
@@ -107,12 +123,27 @@ jobs:
 
       - name: Pull Vercel environment
         if: steps.secrets.outputs.ready == 'true'
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment="$TARGET" --git-branch="$GITHUB_REF_NAME" --token="$VERCEL_TOKEN"
 
       - name: Build
         if: steps.secrets.outputs.ready == 'true'
-        run: vercel build --prod --token="$VERCEL_TOKEN"
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            vercel build --prod --token="$VERCEL_TOKEN"
+          else
+            vercel build --token="$VERCEL_TOKEN"
+          fi
 
       - name: Deploy
+        id: deploy
         if: steps.secrets.outputs.ready == 'true'
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+        run: |
+          if [ "$TARGET" = "production" ]; then
+            url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          else
+            url=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+            vercel alias set "$url" "$STAGING_ALIAS" --token="$VERCEL_TOKEN"
+            url="https://$STAGING_ALIAS"
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"

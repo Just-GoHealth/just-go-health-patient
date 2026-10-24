@@ -1,303 +1,236 @@
-import type { ScreeningBoard, ScreeningRun } from "@/lib/api";
+import type {
+  EnrollmentStatusView,
+  InstrumentItem,
+  StudentRun,
+} from "@/lib/v2/types";
 
 // Dev-only fixtures for exercising the screening/board UI without spending a
-// real test account on every pass. Item names/copy where taken from the real
-// T-24 instrument; never imported outside screening/page.tsx's mock branch,
-// and that branch is itself compiled out of any production build.
+// real test account on every pass. Item names/copy were taken from the real
+// D-1 instrument; only imported by the `?mock=` branches of /screening and
+// /home, which are themselves compiled out of any production build.
 
-export const MOCK_SCREENING_RUN: ScreeningRun = {
-  screeningId: "mock-screening-id",
-  window: "PRE_LONG",
-  label: "T-24",
-  heading: "24 hours before the contest",
+function item(
+  code: string,
+  name: string,
+  sectionCode: string,
+  position: number,
+  prompt: string,
+  helpText: string,
+  options: [emoji: string, label: string, description: string][],
+): InstrumentItem {
+  return {
+    id: `mock-${code}`,
+    code,
+    name,
+    sectionCode,
+    prompt,
+    helpText,
+    position,
+    reversed: false,
+    cssrs: false,
+    options: options.map(([emoji, label, description], i) => ({
+      id: `mock-${code}-${i}`,
+      label,
+      description,
+      emoji,
+      score: i,
+      position: i,
+      safetyEffect: "NONE" as const,
+    })),
+  };
+}
+
+export const MOCK_RUN: StudentRun = {
+  id: "mock-run-id",
+  versionCode: "nsmq2026",
+  kind: "D1",
+  attempt: 1,
   status: "IN_PROGRESS",
-  answered: 0,
-  total: 5,
-  items: [
+  startedAt: "2026-08-21T08:00:00Z",
+  submittedAt: null,
+  closesAt: new Date(Date.now() + 5 * 3600 * 1000).toISOString(),
+  questionnaire: {
+    id: "mock-instrument",
+    code: "NSMQ_D1",
+    revision: 1,
+    title: "D-1 · one day before the contest",
+    sections: [
+      {
+        code: "ENERGY",
+        parentCode: null,
+        title: "Energy & Recovery",
+        timeLabel: "Right now",
+        position: 0,
+        maxScore: 9,
+      },
+      {
+        code: "MINDSET",
+        parentCode: null,
+        title: "Mindset & Pressure",
+        timeLabel: "Going into the contest",
+        position: 1,
+        maxScore: 21,
+      },
+    ],
+    items: [
+      item(
+        "BURNOUT",
+        "Burnout",
+        "ENERGY",
+        0,
+        "How mentally exhausted do you feel from preparing for NSMQ 2026?",
+        "This means how tired your mind feels after all the studying — not whether you slept enough last night.",
+        [
+          ["🙂", "Not exhausted at all", "I still feel mentally fresh."],
+          ["😐", "A little exhausted", "I feel a bit worn down some days."],
+          ["😩", "Very exhausted", "Most days I feel drained from prepping."],
+          ["😵", "Extremely exhausted", "I feel completely burned out."],
+        ],
+      ),
+      item(
+        "NEED_FOR_REST",
+        "Need for Rest",
+        "ENERGY",
+        1,
+        "How much do you feel you need a proper break right now?",
+        "Not a nap — a real day or two off from quiz prep entirely.",
+        [
+          ["🙂", "Not really", "I feel fine continuing as is."],
+          ["😐", "A little", "A short break would help."],
+          ["😩", "A lot", "I really need to slow down soon."],
+          ["😵", "Desperately", "I can't keep going like this."],
+        ],
+      ),
+      item(
+        "PERFORMANCE_WORRY",
+        "Performance Worry",
+        "MINDSET",
+        2,
+        "How much do you worry about how you'll perform in the contest?",
+        "Think about the thoughts that show up when you imagine being on stage.",
+        [
+          ["😌", "Barely at all", "I feel calm about it."],
+          ["😐", "Some worry", "It crosses my mind sometimes."],
+          ["😟", "A lot of worry", "I think about it often."],
+          ["😰", "Constant worry", "It's hard to think about anything else."],
+        ],
+      ),
+      item(
+        "CONFIDENCE",
+        "Confidence",
+        "MINDSET",
+        3,
+        "How confident do you feel about your team's chances?",
+        "Your gut read on how prepared your team is right now.",
+        [
+          ["😄", "Very confident", "I feel great about our chances."],
+          ["🙂", "Fairly confident", "I feel mostly good about it."],
+          ["😟", "Not very confident", "I have real doubts."],
+          ["😣", "Not confident at all", "I don't feel prepared."],
+        ],
+      ),
+    ],
+  },
+  answers: [],
+  sections: [],
+  care: null,
+  careAcknowledged: false,
+};
+
+export const MOCK_SUBMITTED_RUN: StudentRun = {
+  ...MOCK_RUN,
+  status: "SUBMITTED",
+  submittedAt: "2026-08-21T08:21:03Z",
+  questionnaire: null,
+  answers: [
     {
       itemCode: "BURNOUT",
-      name: "Burnout",
-      shortName: "Burnout",
-      section: "Energy",
-      question:
-        "How mentally exhausted do you feel from preparing for NSMQ 2026?",
-      help: "This means how tired your mind feels after all the studying — not whether you slept enough last night.",
-      cssrs: false,
-      options: [
-        {
-          index: 0,
-          emoji: "🙂",
-          label: "Not exhausted at all",
-          sub: "I still feel mentally fresh.",
-        },
-        {
-          index: 1,
-          emoji: "😐",
-          label: "A little exhausted",
-          sub: "I feel a bit worn down some days.",
-        },
-        {
-          index: 2,
-          emoji: "😩",
-          label: "Very exhausted",
-          sub: "Most days I feel drained from prepping.",
-        },
-        {
-          index: 3,
-          emoji: "😵",
-          label: "Extremely exhausted",
-          sub: "I feel completely burned out.",
-        },
-      ],
+      optionId: "mock-BURNOUT-2",
+      optionLabel: "Very exhausted",
     },
     {
       itemCode: "NEED_FOR_REST",
-      name: "Need for Rest",
-      shortName: "Need for Rest",
-      section: "Energy",
-      question: "How much do you feel you need a proper break right now?",
-      help: "Not a nap — a real day or two off from quiz prep entirely.",
-      cssrs: false,
-      options: [
-        {
-          index: 0,
-          emoji: "🙂",
-          label: "Not really",
-          sub: "I feel fine continuing as is.",
-        },
-        {
-          index: 1,
-          emoji: "😐",
-          label: "A little",
-          sub: "A short break would help.",
-        },
-        {
-          index: 2,
-          emoji: "😩",
-          label: "A lot",
-          sub: "I really need to slow down soon.",
-        },
-        {
-          index: 3,
-          emoji: "😵",
-          label: "Desperately",
-          sub: "I can't keep going like this.",
-        },
-      ],
+      optionId: "mock-NEED_FOR_REST-1",
+      optionLabel: "A little",
     },
     {
       itemCode: "PERFORMANCE_WORRY",
-      name: "Performance Worry",
-      shortName: "Performa...",
-      section: "Mindset",
-      question:
-        "How much do you worry about how you'll perform in the contest?",
-      help: "Think about the thoughts that show up when you imagine being on stage.",
-      cssrs: false,
-      options: [
-        {
-          index: 0,
-          emoji: "😌",
-          label: "Barely at all",
-          sub: "I feel calm about it.",
-        },
-        {
-          index: 1,
-          emoji: "😐",
-          label: "Some worry",
-          sub: "It crosses my mind sometimes.",
-        },
-        {
-          index: 2,
-          emoji: "😟",
-          label: "A lot of worry",
-          sub: "I think about it often.",
-        },
-        {
-          index: 3,
-          emoji: "😰",
-          label: "Constant worry",
-          sub: "It's hard to think about anything else.",
-        },
-      ],
-    },
-    {
-      itemCode: "DIFFICULTY_CONCENTRATING",
-      name: "Difficulty Concentrating",
-      shortName: "Difficulty ...",
-      section: "Mindset",
-      question: "How hard has it been to concentrate while studying?",
-      help: "Losing your place, re-reading the same line, or drifting off mid-topic.",
-      cssrs: false,
-      options: [
-        {
-          index: 0,
-          emoji: "🙂",
-          label: "Not hard at all",
-          sub: "I focus fine.",
-        },
-        {
-          index: 1,
-          emoji: "😐",
-          label: "A little hard",
-          sub: "I lose focus sometimes.",
-        },
-        {
-          index: 2,
-          emoji: "😟",
-          label: "Quite hard",
-          sub: "I struggle to stay on task often.",
-        },
-        {
-          index: 3,
-          emoji: "😵",
-          label: "Very hard",
-          sub: "I can barely concentrate at all.",
-        },
-      ],
+      optionId: "mock-PERFORMANCE_WORRY-2",
+      optionLabel: "A lot of worry",
     },
     {
       itemCode: "CONFIDENCE",
-      name: "Confidence",
-      shortName: "Confidence",
-      section: "Mindset",
-      question: "How confident do you feel about your team's chances?",
-      help: "Your gut read on how prepared your team is right now.",
-      cssrs: false,
-      options: [
-        {
-          index: 0,
-          emoji: "😄",
-          label: "Very confident",
-          sub: "I feel great about our chances.",
-        },
-        {
-          index: 1,
-          emoji: "🙂",
-          label: "Fairly confident",
-          sub: "I feel mostly good about it.",
-        },
-        {
-          index: 2,
-          emoji: "😟",
-          label: "Not very confident",
-          sub: "I have real doubts.",
-        },
-        {
-          index: 3,
-          emoji: "😣",
-          label: "Not confident at all",
-          sub: "I don't feel prepared.",
-        },
-      ],
+      optionId: "mock-CONFIDENCE-1",
+      optionLabel: "Fairly confident",
     },
   ],
-  answeredIndexes: [],
-};
-
-export const MOCK_SCREENING_BOARD: ScreeningBoard = {
-  screeningId: "mock-screening-id",
-  run: "t24",
-  label: "T-24",
-  head: "24 Hours Before Contest",
-  at: "2026-08-21T08:21:03",
-  school: "Presbyterian Boys Senior High School",
-  emergency: false,
-  careAcknowledged: false,
   sections: [
     {
-      key: "gmh",
+      code: "GMH",
       title: "General Mental Health",
-      time: "Over the last two weeks",
       score: 3,
-      max: 9,
+      maxScore: 9,
+      level: 1,
       band: "Good",
-      fam: "green",
-      emergency: false,
-      items: [
-        {
-          itemCode: "LOSS_OF_INTEREST",
-          name: "Loss of Interest",
-          label: "A few days",
-          severity: "mild",
-        },
-        {
-          itemCode: "SADNESS",
-          name: "Sadness",
-          label: "I have generally felt okay.",
-          severity: "mild",
-        },
-        {
-          itemCode: "LONELINESS",
-          name: "Loneliness",
-          label: "Cut off on a few days",
-          severity: "mod",
-        },
-      ],
+      carried: false,
     },
     {
-      key: "energy",
+      code: "ENERGY",
       title: "Energy & Recovery",
-      time: "Right now",
       score: 4,
-      max: 9,
+      maxScore: 9,
+      level: 2,
       band: "Average",
-      fam: "gold",
-      emergency: false,
-      items: [
-        {
-          itemCode: "BURNOUT",
-          name: "Burnout",
-          label: "Very exhausted",
-          severity: "mod",
-        },
-        {
-          itemCode: "NEED_FOR_REST",
-          name: "Need for Rest",
-          label: "A little",
-          severity: "mild",
-        },
-      ],
+      carried: false,
     },
     {
-      key: "mindset",
+      code: "MINDSET",
       title: "Mindset & Pressure",
-      time: "Going into the contest",
-      score: 8,
-      max: 21,
-      band: "Moderate",
-      fam: "gold",
-      emergency: false,
-      items: [
-        {
-          itemCode: "PERFORMANCE_WORRY",
-          name: "Performance Worry",
-          label: "A lot of worry",
-          severity: "mod",
-        },
-        {
-          itemCode: "DIFFICULTY_CONCENTRATING",
-          name: "Difficulty Concentrating",
-          label: "Quite hard",
-          severity: "mod",
-        },
-        {
-          itemCode: "CONFIDENCE",
-          name: "Confidence",
-          label: "Fairly confident",
-          severity: "mild",
-        },
-      ],
+      score: 14,
+      maxScore: 21,
+      level: 3,
+      band: "High",
+      carried: false,
     },
   ],
+  care: {
+    urgency: "SOON",
+    message: "A counsellor will check in with you before your next contest.",
+  },
 };
 
-export const MOCK_SCREENING_BOARD_EMERGENCY: ScreeningBoard = {
-  ...MOCK_SCREENING_BOARD,
-  emergency: true,
-  sections: MOCK_SCREENING_BOARD.sections?.map((s) =>
-    s.key === "gmh"
-      ? { ...s, band: "Emergency", fam: "emg", emergency: true }
-      : s,
+export const MOCK_URGENT_RUN: StudentRun = {
+  ...MOCK_SUBMITTED_RUN,
+  sections: MOCK_SUBMITTED_RUN.sections.map((s) =>
+    s.code === "GMH" ? { ...s, score: 9, level: 4, band: "Very Poor" } : s,
   ),
+  care: {
+    urgency: "NOW",
+    message:
+      "Please talk to someone now. Your school's counsellor will reach out very soon.",
+  },
+};
+
+export const MOCK_STATUS: EnrollmentStatusView = {
+  versionCode: "nsmq2026",
+  versionLabel: "NSMQ 2026",
+  open: true,
+  teamId: "mock-team",
+  campusId: "mock-campus",
+  campusName: "Presbyterian Boys Senior High School",
+  teamStatus: "ACTIVE",
+  assentNeeded: false,
+  assentText: null,
+  assentVersion: 1,
+  nextKickoff: new Date(Date.now() + 3 * 86400 * 1000).toISOString(),
+  due: [
+    {
+      kind: "D1",
+      obligationKey: "mock-d1",
+      from: "2026-08-21T08:00:00Z",
+      until: null,
+      runId: null,
+      runStatus: null,
+    },
+  ],
 };

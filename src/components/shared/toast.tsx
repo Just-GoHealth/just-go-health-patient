@@ -1,39 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { toast } from "@just-gohealth/ui";
 
-type ToastState = { msg: string; on: boolean } | null;
+// how long a toast stays up - same on-screen time as the old hand-rolled
+// show/fade/hide timers (4.2s before it started fading)
+const TOAST_DURATION_MS = 4200;
 
-// same hand-rolled show/fade/hide timing as pledge/page.tsx's toast,
-// pulled out here so other pages (home, screening) don't each duplicate
-// the timer bookkeeping.
-export function useToast() {
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const [toast, setToast] = useState<ToastState>(null);
-
-  useEffect(() => {
-    return () => {
-      timers.current.forEach(clearTimeout);
-    };
-  }, []);
-
-  function showToast(msg: string) {
-    timers.current.forEach(clearTimeout);
-    setToast({ msg, on: false });
-    timers.current = [
-      setTimeout(() => setToast({ msg, on: true }), 16),
-      setTimeout(
-        () => setToast((prev) => (prev ? { ...prev, on: false } : prev)),
-        4200,
-      ),
-      setTimeout(() => setToast(null), 4800),
-    ];
-  }
-
-  return { toast, showToast };
+// thin compatibility wrapper over the shared @just-gohealth/ui toaster
+// (mounted once in app/layout.tsx), so call sites keep `showToast(msg)`
+export function showToast(msg: string) {
+  toast(msg, { duration: TOAST_DURATION_MS });
 }
 
-export function Toast({ toast }: { toast: ToastState }) {
-  if (!toast) return null;
-  return <div className={`app-toast ${toast.on ? "on" : ""}`}>{toast.msg}</div>;
+export function useToast() {
+  return { showToast };
 }

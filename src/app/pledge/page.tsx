@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LockIcon } from "@/components/landing/icons";
+import { showToast } from "@/components/shared/toast";
 import "./pledge.css";
 
 const STANZAS: string[][] = [
@@ -140,7 +141,6 @@ export default function PledgePage() {
   const atSigRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
-  const toastTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const [nowIndex, setNowIndex] = useState(-1);
   const [listeningOn, setListeningOn] = useState(false);
@@ -155,7 +155,6 @@ export default function PledgePage() {
   const [signed, setSigned] = useState(false);
   const [name, setName] = useState("");
   const [shakeKey, setShakeKey] = useState(0);
-  const [toast, setToast] = useState<{ msg: string; on: boolean } | null>(null);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setEntered(true));
@@ -176,7 +175,6 @@ export default function PledgePage() {
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      toastTimers.current.forEach(clearTimeout);
       try {
         window.speechSynthesis?.cancel();
       } catch {}
@@ -359,19 +357,6 @@ export default function PledgePage() {
       clearTimer();
       if (runningRef.current) timerRef.current = setTimeout(advance, STEP);
     }
-  }
-
-  function showToast(msg: string) {
-    toastTimers.current.forEach(clearTimeout);
-    setToast({ msg, on: false });
-    toastTimers.current = [
-      setTimeout(() => setToast({ msg, on: true }), 16),
-      setTimeout(
-        () => setToast((prev) => (prev ? { ...prev, on: false } : prev)),
-        4200,
-      ),
-      setTimeout(() => setToast(null), 4800),
-    ];
   }
 
   function handleSignSubmit(e: React.FormEvent) {
@@ -557,10 +542,6 @@ export default function PledgePage() {
           <PenIcon />
           <span>{signed ? "Signed" : "Sign"}</span>
         </button>
-
-        {toast && (
-          <div className={`pl-toast ${toast.on ? "on" : ""}`}>{toast.msg}</div>
-        )}
       </div>
     </div>
   );

@@ -1,96 +1,117 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import "./onboard.css";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+  Button,
+  Field as UiField,
+  ImageCard,
+  Input,
+  Logo,
+  OtpInput,
+  PasswordInput,
+  PhotoUpload,
+  RadioGroup,
+  Select,
+  Spinner,
+  ToggleGroup,
+  cn,
+  formatCountdown,
+  useCountdown,
+  type FieldProps,
+  type PasswordRule,
+} from "@just-gohealth/ui";
 import { CodeGateModal } from "@/components/onboard/code-gate-modal";
-import { CustomSelect } from "@/components/onboard/custom-select";
 import { PhotoTestimonialPanel } from "@/components/onboard/photo-testimonial-panel";
+import { ApiErrorText } from "@/components/shared/api-error-text";
+import { useToast } from "@/components/shared/toast";
 import { ONBOARD_STORAGE_KEY } from "@/lib/constants";
-import { clearReferralHandle, getReferralHandle } from "@/lib/referral";
 import {
-  ApiError,
-  JOIN_ERROR_COPY,
-  type CampusPickerItem,
-  type ContactType,
-  activateEnrollment,
-  checkContact,
-  deleteVersionCampus,
-  forgotPassword,
-  getLockinVersion,
+  clearVersionCode,
+  getVersionCode,
+  rememberVersionCode,
+} from "@/lib/version-link";
+import type { ApiError } from "@/lib/v2/http";
+import {
+  asApiError,
+  formLevelError,
+  isSignedOut,
+  isUnexpected,
+  localError,
+} from "@/lib/v2/errors";
+import * as auth from "@/lib/v2/auth";
+import * as patient from "@/lib/v2/patient";
+import { getCampusTypes, getProgrammes, searchCampuses } from "@/lib/v2/campus";
+import {
+  enroll,
+  getVersion,
   getVersionCampuses,
-  getVersionMembership,
-  joinVersionTeam,
-  selectVersionCampus,
-  sendOtp,
-  setPassword as setPasswordApi,
-  signin,
-  signup,
-  uploadProfilePhoto,
-  verifyOtp,
-} from "@/lib/api";
+  join,
+  selectCampus,
+} from "@/lib/v2/nsmq";
+import { CARD_LABEL, gradeLabel } from "@/lib/v2/labels";
+import { nextDestination, type OnboardStep } from "@/lib/v2/next-route";
+import type {
+  CampusCard,
+  CampusCardItem,
+  CodePurpose,
+  Enrollment,
+  Gender,
+  Grade,
+  Me,
+  OfferedProgramme,
+  PatientHome,
+  PatientNext,
+  PickerCampus,
+} from "@/lib/v2/types";
+import { useNicknameCheck } from "@/lib/v2/use-nickname-check";
+import { useRateLimit } from "@/lib/v2/use-rate-limit";
 
-const VERSION_CODE = "nsmq2026";
+type ContactType = "PHONE" | "EMAIL";
 
-type Step =
+// before sign-in
+type AuthStep =
   | "choice"
   | "phone"
   | "email"
   | "signup"
   | "verify"
-  | "photo"
   | "signin"
   | "forgotVerify"
-  | "resetPassword"
-  | "campus"
-  | "code"
-  | "done";
+  | "resetPassword";
 
-// dev-only shortcut so later steps (photo, campus, code) can be reviewed
-// without a real OTP — never active in a production build. Steps that call
-// real backend endpoints on submit still do (and will fail without a real
-// session); this only gets you to the screen to look at it.
+// after sign-in: the `me.next` steps (src/lib/v2/next-route.ts) plus the
+// campus picker that follows the school type
+type Step = AuthStep | OnboardStep | "campus";
+
+const AUTH_STEPS: Step[] = [
+  "choice",
+  "phone",
+  "email",
+  "signup",
+  "verify",
+  "signin",
+  "forgotVerify",
+  "resetPassword",
+];
+
+// dev-only shortcut so later steps can be reviewed without a real code —
+// never active in a production build. Steps that call real backend endpoints
+// on submit still do (and will fail without a real session); this only gets
+// you to the screen to look at it.
 const DEV_JUMP_ENABLED = process.env.NODE_ENV !== "production";
-const DEV_JUMP_STEPS: Step[] = ["photo", "campus", "code"];
+const DEV_JUMP_STEPS = ["photo", "schoolType", "nsmqCampus", "code"] as const;
 
-const DEV_MOCK_CAMPUSES: CampusPickerItem[] = [
+const DEV_MOCK_CAMPUSES: PickerCampus[] = [
   {
-    campusId: -1,
+    id: "dev-1",
     fullName: "Presbyterian Boys Senior High School",
-    nickname: "Presec Legon",
-    teamId: -1,
-    memberCount: 87,
-    whenLabel: "Tomorrow · 9am",
-    state: "tomorrow",
+    type: "SHS",
   },
-  {
-    campusId: -2,
-    fullName: "Mfantsipim School",
-    nickname: "Mfantsipim",
-    teamId: -2,
-    memberCount: 64,
-    whenLabel: "Today · 3pm",
-    state: "today",
-  },
-  {
-    campusId: -3,
-    fullName: "Wesley Girls High School",
-    nickname: "Wesley Girls",
-    teamId: -3,
-    memberCount: 52,
-    whenLabel: "August 19 · Out",
-    state: "out",
-  },
+  { id: "dev-2", fullName: "Mfantsipim School", type: "SHS" },
+  { id: "dev-3", fullName: "Wesley Girls High School", type: "SHS" },
 ];
 
 const MONTHS = [
@@ -107,9 +128,18 @@ const MONTHS = [
   "November",
   "December",
 ];
-// full names crowd the narrow Day/Month/Year row on mobile - shown there
-// instead of MONTHS, same underlying value either way
-const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3));
+// full names crowd the narrow Day/Month/Year row on mobile - the short name
+// is shown there instead, while the option's value stays the full month
+// name either way (MONTHS.indexOf(dobMonth) relies on that)
+const MONTH_OPTIONS = MONTHS.map((m) => ({
+  value: m,
+  label: (
+    <>
+      <span className="sm:hidden">{m.slice(0, 3)}</span>
+      <span className="hidden sm:inline">{m}</span>
+    </>
+  ),
+}));
 
 // title-cases as you type ("john kwame" -> "John Kwame") and strips anything
 // that isn't a letter, space, apostrophe or hyphen - a real name, not a handle
@@ -117,86 +147,98 @@ function smartName(raw: string): string {
   let v = raw.replace(/[^a-zA-ZÀ-ɏ' -]/g, "");
   v = v.replace(/\s{2,}/g, " ").replace(/^\s+/, "");
   v = v.replace(/(^\s*[a-zA-ZÀ-ɏ])|(\s+[a-zA-ZÀ-ɏ])/g, (m) => m.toUpperCase());
-  return v;
+  return v.slice(0, 100);
 }
 
-// nicknames are letters, numbers, and underscores only - no spaces or
-// punctuation, so they're safe to use as a handle-like display name
+// the server's nickname rule: letters, numbers and _ . ' - with no spaces,
+// 30 characters at most
 function sanitizeNickname(raw: string): string {
-  return raw.replace(/[^a-zA-Z0-9_]/g, "");
+  return raw.replace(/[^\p{L}\p{M}\p{N}_.'’-]/gu, "").slice(0, 30);
 }
 
-// no real crest/banner from the backend for this campus - a plain warm
-// gradient in the app's own palette, not a fabricated crest
-const CAMPUS_FALLBACK_BG =
-  "radial-gradient(120% 160% at 50% 0%, #43302a 0%, #2b1f1c 55%, #1a1412 100%)";
-
-// colors ported 1:1 from the legacy prototype's .sc-when / .st-today /
-// .st-tomorrow / .st-out rules - "today" reads warm/urgent, "out" reads
-// muted/closed, per the same three states the real API sends
-function campusPillStyle(state: string | undefined): CSSProperties {
-  if (state === "today") {
-    return {
-      background: "linear-gradient(135deg,#fff2cf,#ffd98a 46%,#e0a63c)",
-      color: "#3a2703",
-      borderColor: "rgba(255,255,255,.5)",
-    };
-  }
-  if (state === "out") {
-    return {
-      background:
-        "radial-gradient(120% 160% at 50% 0%,#733730 0%,#572621 48%,#3b1a17 100%)",
-      color: "#f0d7b4",
-      borderColor: "rgba(232,212,173,.38)",
-    };
-  }
-  // tomorrow / future share the mock's default gold treatment
-  return {
-    background: "linear-gradient(135deg,#f6e7c4,#e8d4ad 48%,#b8935a)",
-    color: "#2a2007",
-    borderColor: "rgba(255,255,255,.5)",
-  };
-}
-
-function campusDotStyle(state: string | undefined): CSSProperties {
-  if (state === "today") {
-    return {
-      background: "#d8341f",
-      boxShadow: "0 0 9px rgba(216,52,31,.85)",
-      animation: "campus-live 1.15s ease-in-out infinite",
-    };
-  }
-  if (state === "out") {
-    return { background: "#ed4b58", boxShadow: "0 0 8px rgba(237,75,88,.6)" };
-  }
-  return { background: "#1e8f57", boxShadow: "0 0 8px rgba(30,143,87,.7)" };
-}
-
-const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
-const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 40 }, (_, i) =>
-  String(CURRENT_YEAR - 10 - i),
+const toOptions = (values: string[]) =>
+  values.map((v) => ({ value: v, label: v }));
+const DAY_OPTIONS = toOptions(
+  Array.from({ length: 31 }, (_, i) => String(i + 1)),
+);
+// the server accepts birth years 1980–2015
+const YEAR_OPTIONS = toOptions(
+  Array.from({ length: 2015 - 1980 + 1 }, (_, i) => String(2015 - i)),
 );
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+const GENDER_OPTIONS: { value: Gender; label: string }[] = [
+  { value: "MALE", label: "Male" },
+  { value: "FEMALE", label: "Female" },
+];
+
+const CONTACT_OPTIONS = (["PHONE", "EMAIL"] as ContactType[]).map((type) => ({
+  value: type,
+  label: (
+    <span className="flex flex-col items-center gap-3 py-4 font-bold">
+      <span className="text-gold">{type === "PHONE" ? "☎" : "✉"}</span>
+      {type}
+    </span>
+  ),
+}));
+
+// the app's own password rules (6+ chars, a letter, a number) for the shared
+// PasswordInput checklist. PasswordRule ids are a fixed set, so "a letter"
+// rides on the "lowercase" id with its own test.
+const PASSWORD_RULES: PasswordRule[] = [
+  { id: "length", label: "6+ characters", test: (p) => p.length >= 6 },
+  { id: "lowercase", label: "One letter", test: (p) => /[A-Za-z]/.test(p) },
+  { id: "number", label: "One number", test: (p) => /[0-9]/.test(p) },
+];
+const PASSWORD_MESSAGE =
+  "Use 6 to 72 characters, with at least one letter and one number";
+
+function passwordOk(p: string): boolean {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="text-muted text-xs font-bold tracking-[0.15em] uppercase">
-        {label}
-      </div>
-      {children}
-    </div>
+    p.length >= 6 &&
+    /[A-Za-z]/.test(p) &&
+    /[0-9]/.test(p) &&
+    new TextEncoder().encode(p).length <= 72
   );
 }
 
-const inputClass =
-  "w-full rounded-xl border border-line bg-white/5 px-4 py-3 text-base text-txt outline-none placeholder:text-muted focus:border-gold/60";
+const OTP_LENGTH = 6;
+// real access codes issued to schools are 9 characters (the server allows
+// up to 40, so this is the UI's choice, not a server rule)
+const ACCESS_CODE_LENGTH = 9;
+// a new code can be asked for once a minute
+const RESEND_SECONDS = 60;
+// the first OTP box's id, so a failed code can put focus back on it
+const OTP_INPUT_ID = "onboard-otp-input";
+const SENT_COPY = "If that account exists, we've sent a code.";
+
+// the shared Field (real <label for>, error/description wiring) with this
+// screen's small uppercase label style
+function Field({ className, ...props }: FieldProps) {
+  return (
+    <UiField
+      className={cn(
+        "[&>label]:text-muted gap-1.5 [&>label]:text-xs [&>label]:font-bold [&>label]:tracking-[0.15em] [&>label]:uppercase",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+const inputClass = "rounded-xl text-txt placeholder:text-muted";
+
+// the 6-box code row, sized like the old hand-rolled boxes
+const otpClass =
+  "mx-auto mt-6 max-w-none justify-center gap-[1.5vw] sm:gap-2 [&_input]:aspect-[4/5] [&_input]:w-[clamp(32px,11vw,44px)] [&_input]:max-w-none [&_input]:flex-none [&_input]:rounded-xl [&_input]:font-sans [&_input]:text-[clamp(16px,4.5vw,20px)] [&_input]:font-bold";
+
+const backClass =
+  "border-white/15 font-semibold text-white/70 hover:border-white/30 hover:bg-transparent hover:text-white";
+
+const resendClass =
+  "text-muted mt-6 h-auto px-0 text-sm font-medium disabled:opacity-60";
+
+const pickCardClass =
+  "w-full rounded-2xl border border-white/15 bg-black/20 px-4 py-3 text-left transition-colors hover:border-gold disabled:opacity-60";
 
 const PROGRESS: Record<Step, number> = {
   choice: 4,
@@ -204,30 +246,38 @@ const PROGRESS: Record<Step, number> = {
   email: 8,
   signup: 20,
   verify: 30,
-  photo: 52,
   signin: 15,
   forgotVerify: 15,
   resetPassword: 15,
+  photo: 45,
+  schoolType: 55,
   campus: 65,
-  code: 80,
-  done: 100,
+  nsmqCampus: 65,
+  programme: 75,
+  grade: 85,
+  finish: 95,
 };
+
+const SIGNUP_FIELDS = [
+  "fullName",
+  "nickname",
+  "gender",
+  "dateOfBirth",
+  "password",
+] as const;
 
 type SavedProgress = {
   step?: Step;
   contactType?: ContactType;
   selectedType?: ContactType | null;
   contactValue?: string;
-  userId?: string;
   signinNickname?: string;
   name?: string;
   nickname?: string;
-  gender?: string;
+  gender?: Gender | "";
   dobDay?: string;
   dobMonth?: string;
   dobYear?: string;
-  otpReference?: string;
-  selectedCampus?: CampusPickerItem | null;
 };
 
 export default function OnboardPage() {
@@ -241,99 +291,97 @@ export default function OnboardPage() {
 function OnboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { showToast } = useToast();
   const devJumpParam = searchParams.get("devstep");
   const devJumpStep =
-    DEV_JUMP_ENABLED && DEV_JUMP_STEPS.includes(devJumpParam as Step)
-      ? (devJumpParam as Step)
+    DEV_JUMP_ENABLED &&
+    (DEV_JUMP_STEPS as readonly string[]).includes(devJumpParam ?? "")
+      ? (devJumpParam as (typeof DEV_JUMP_STEPS)[number])
       : null;
-  // "code" isn't a real step (it's a modal over "campus") — devstep=code
-  // lands on campus with the modal pre-opened, handled below
+  // "code" isn't a real step (it's a modal over the team picker) —
+  // devstep=code lands on nsmqCampus with the modal pre-opened
   const [step, setStep] = useState<Step>(
-    devJumpStep === "code" ? "campus" : (devJumpStep ?? "choice"),
+    devJumpStep === "code" ? "nsmqCampus" : (devJumpStep ?? "choice"),
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(false);
+  const rateLimit = useRateLimit();
+  const resend = useCountdown(0);
 
   const [contactType, setContactType] = useState<ContactType>("PHONE");
   const [selectedType, setSelectedType] = useState<ContactType | null>(null);
   const [contactValue, setContactValue] = useState("");
-  const [userId, setUserId] = useState("");
   const [signinNickname, setSigninNickname] = useState("");
 
   const [name, setName] = useState("");
   const [nickname, setNickname] = useState("");
-  const [gender, setGender] = useState("");
+  const [gender, setGender] = useState<Gender | "">("");
   const [dobDay, setDobDay] = useState("");
   const [dobMonth, setDobMonth] = useState("");
   const [dobYear, setDobYear] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const nicknameTaken = useNicknameCheck(step === "signup" ? nickname : "");
 
   const [signinPassword, setSigninPassword] = useState("");
 
-  const [passwordResetToken, setPasswordResetToken] = useState("");
+  const [grant, setGrant] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
-  const [otpReference, setOtpReference] = useState("");
-  const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
-  const [resendIn, setResendIn] = useState(0);
-  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [otp, setOtp] = useState("");
 
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
-  const [photoZoom, setPhotoZoom] = useState(1);
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
-
-  const [campusQuery, setCampusQuery] = useState("");
-  const [campuses, setCampuses] = useState<CampusPickerItem[]>(
-    devJumpStep === "campus" ? DEV_MOCK_CAMPUSES : [],
+  const [photo, setPhoto] = useState<{ blob: Blob; previewUrl: string } | null>(
+    null,
   );
+
+  // the signed-in student's profile (campus, grades) and NSMQ enrollment
+  const [profile, setProfile] = useState<PatientHome | null>(null);
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  // the NSMQ version from `?v=` (or the landing page's LOCK IN button)
+  const linkVersion = searchParams.get("v");
+  const [versionCode] = useState<string | null>(() => {
+    rememberVersionCode(linkVersion);
+    return linkVersion ?? getVersionCode();
+  });
+
+  // school type → campus (general onboarding)
+  const [cards, setCards] = useState<CampusCard[]>([]);
+  const [card, setCard] = useState<CampusCard | "">("");
+  const [campusQuery, setCampusQuery] = useState("");
+  const [campusPage, setCampusPage] = useState<{
+    items: CampusCardItem[];
+    page: number;
+    total: number;
+  }>({ items: [], page: 0, total: 0 });
   const [campusesLoading, setCampusesLoading] = useState(false);
-  const [selectedCampus, setSelectedCampus] = useState<CampusPickerItem | null>(
+  const [pickingId, setPickingId] = useState<string | null>(null);
+
+  // programme
+  const [programmeQuery, setProgrammeQuery] = useState("");
+  const [programmes, setProgrammes] = useState<{
+    fromCatalogue: boolean;
+    items: OfferedProgramme[];
+  } | null>(null);
+
+  // NSMQ team picker + access code
+  const [teamQuery, setTeamQuery] = useState("");
+  const [teamCampuses, setTeamCampuses] = useState<PickerCampus[]>(
+    devJumpStep === "nsmqCampus" || devJumpStep === "code"
+      ? DEV_MOCK_CAMPUSES
+      : [],
+  );
+  const [selectedTeam, setSelectedTeam] = useState<PickerCampus | null>(
     devJumpStep === "code" ? DEV_MOCK_CAMPUSES[0] : null,
   );
-
-  // the access-code gate is a modal over the campus grid, not its own step
+  const [assentText, setAssentText] = useState<string | null>(null);
   const [codeModalOpen, setCodeModalOpen] = useState(devJumpStep === "code");
-  // which card is mid-selection right now - shows a spinner on that one
-  // specifically while pickCampus()'s PUT is in flight
-  const [pickingCampusId, setPickingCampusId] = useState<number | null>(null);
-  // 9 characters, no dashes - the integration guide documents 8, but real
-  // codes issued to schools are 9 (confirmed against an actual code)
-  const [code, setCode] = useState<string[]>(Array(9).fill(""));
+  const [code, setCode] = useState("");
   const [codeState, setCodeState] = useState<"" | "good" | "bad">("");
   const [codeMessage, setCodeMessage] = useState("");
-  const codeRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const [assentTextVersion, setAssentTextVersion] = useState("");
+  const [codeTraceId, setCodeTraceId] = useState<string | undefined>();
 
   const [restored, setRestored] = useState(false);
-
-  // the assent version is decided by the backend and can change between
-  // contests, so it has to be fetched live rather than hardcoded — a stale
-  // local version was why joins were failing. The agreement itself isn't
-  // shown to the student here (that's not how the mock does it) — the code
-  // step just needs the current version so the join can auto-accept it.
-  useEffect(() => {
-    if (step !== "code" || assentTextVersion) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await getLockinVersion(VERSION_CODE);
-        if (cancelled) return;
-        setAssentTextVersion(res.data?.assentTextVersion ?? "");
-      } catch {
-        // non-fatal here; a join attempt will surface the real error if the
-        // version really is required and missing
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [step, assentTextVersion]);
+  const [sessionChecked, setSessionChecked] = useState(!!devJumpStep);
 
   useEffect(() => {
     if (devJumpStep) {
@@ -345,11 +393,12 @@ function OnboardPageInner() {
         const raw = localStorage.getItem(ONBOARD_STORAGE_KEY);
         if (raw) {
           const saved: SavedProgress = JSON.parse(raw);
-          if (saved.step) setStep(saved.step);
+          if (saved.step && AUTH_STEPS.includes(saved.step)) {
+            setStep(saved.step);
+          }
           if (saved.contactType) setContactType(saved.contactType);
           if (saved.selectedType) setSelectedType(saved.selectedType);
           if (saved.contactValue) setContactValue(saved.contactValue);
-          if (saved.userId) setUserId(saved.userId);
           if (saved.signinNickname) setSigninNickname(saved.signinNickname);
           if (saved.name) setName(saved.name);
           if (saved.nickname) setNickname(saved.nickname);
@@ -357,8 +406,6 @@ function OnboardPageInner() {
           if (saved.dobDay) setDobDay(saved.dobDay);
           if (saved.dobMonth) setDobMonth(saved.dobMonth);
           if (saved.dobYear) setDobYear(saved.dobYear);
-          if (saved.otpReference) setOtpReference(saved.otpReference);
-          if (saved.selectedCampus) setSelectedCampus(saved.selectedCampus);
         }
       } catch {
         // ignore corrupt/unavailable storage
@@ -368,78 +415,59 @@ function OnboardPageInner() {
     return () => cancelAnimationFrame(raf);
   }, [devJumpStep]);
 
-  // the single source of truth for "given the server's nextStep, where does
-  // this patient go" — used after verify/sign-in/join so a returning, fully
-  // joined patient lands on their check or home instead of being walked
-  // through campus + access code again just because they signed in again
-  const routeByNextStep = useCallback(
-    async (nextStep: string | undefined, fallback: Step) => {
-      switch (nextStep) {
-        case "VERIFY_OTP":
-          setStep("verify");
-          return;
-        case "PROFILE_PHOTO":
-          setStep("photo");
-          return;
-        case "TEAM_PICKER":
-          setStep("campus");
-          return;
-        case "ACCESS_CODE":
-          // the code gate is a modal over the campus grid — if we still
-          // know which campus they picked (restored from this browser),
-          // reopen it directly; otherwise land on the grid to pick again
-          setStep("campus");
-          if (selectedCampus) setCodeModalOpen(true);
-          return;
-        case "SCREENING":
-          router.push("/screening");
-          return;
-        case "HOME":
-          router.push("/home");
-          return;
-        default:
-          setStep(fallback);
+  // the single place `me.next` turns into a screen (via the tested table in
+  // src/lib/v2/next-route.ts) — after sign-in, verify, password reset and
+  // every onboarding step
+  const go = useCallback(
+    (next: PatientNext, current: Enrollment | null = enrollment) => {
+      const dest = nextDestination(next, current);
+      setError(null);
+      if (dest.page === "/home") {
+        try {
+          localStorage.removeItem(ONBOARD_STORAGE_KEY);
+        } catch {
+          // ignore unavailable storage
+        }
+        router.push("/home");
+      } else {
+        setStep(dest.step);
       }
     },
-    [router, selectedCampus],
+    [router, enrollment],
   );
 
-  const [sessionChecked, setSessionChecked] = useState(!!devJumpStep);
+  // after any sign-in: opened from an NSMQ link → enroll in that version
+  // (identity knows nothing about versions), then route by `me.next`
+  const afterSignIn = useCallback(
+    async (me: Me) => {
+      let enrolled: Enrollment | null = null;
+      if (versionCode) {
+        try {
+          enrolled = await enroll(versionCode);
+        } catch {
+          // closed or unknown version - carry on with plain onboarding
+          clearVersionCode();
+        }
+      }
+      setEnrollment(enrolled);
+      go(me.next, enrolled);
+    },
+    [versionCode, go],
+  );
 
+  // GET /auth/me is the session's source of truth: a signed-in student is
+  // routed straight to their next step; otherwise the restored sign-in
+  // screens stay as they were
   useEffect(() => {
-    // dev-jump already forced the destination step deliberately — don't let
-    // a real (likely unauthenticated) session check second-guess it
     if (!restored || devJumpStep) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await getVersionMembership(VERSION_CODE);
+        const me = await auth.getMe();
         if (cancelled) return;
-        if (res.data?.teamId) {
-          // already signed in and already joined a team - skip the whole
-          // flow and go straight to whatever's actually next for them
-          await routeByNextStep(res.data?.nextStep, "done");
-        }
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof ApiError && e.status !== 401 && e.status !== 403) {
-          // signed in, but hasn't joined a team for this version yet -
-          // resume at the campus picker instead of restarting from scratch
-          setStep((s) =>
-            s === "campus" || s === "code" || s === "done" ? s : "campus",
-          );
-        } else {
-          // 401/403 means not signed in - if the restored step needs a
-          // session (photo/campus/code/done all call authenticated
-          // endpoints), send them to sign in instead of letting them hit a
-          // 403 further down the flow. routeByNextStep already resumes them
-          // at the right step once they're back in.
-          setStep((s) =>
-            s === "photo" || s === "campus" || s === "code" || s === "done"
-              ? "signin"
-              : s,
-          );
-        }
+        await afterSignIn(me);
+      } catch {
+        // not signed in - stay on the (restored) sign-in steps
       } finally {
         if (!cancelled) setSessionChecked(true);
       }
@@ -447,17 +475,18 @@ function OnboardPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [restored, routeByNextStep, devJumpStep]);
+  }, [restored, devJumpStep, afterSignIn]);
 
   useEffect(() => {
     if (!restored) return; // don't overwrite saved progress with initial state
     try {
       const toSave: SavedProgress = {
-        step,
+        // only the sign-in steps are resumed from here; after sign-in the
+        // server's `me.next` decides
+        step: AUTH_STEPS.includes(step) ? step : undefined,
         contactType,
         selectedType,
         contactValue,
-        userId,
         signinNickname,
         name,
         nickname,
@@ -465,8 +494,6 @@ function OnboardPageInner() {
         dobDay,
         dobMonth,
         dobYear,
-        otpReference,
-        selectedCampus,
       };
       localStorage.setItem(ONBOARD_STORAGE_KEY, JSON.stringify(toSave));
     } catch {
@@ -478,7 +505,6 @@ function OnboardPageInner() {
     contactType,
     selectedType,
     contactValue,
-    userId,
     signinNickname,
     name,
     nickname,
@@ -486,70 +512,135 @@ function OnboardPageInner() {
     dobDay,
     dobMonth,
     dobYear,
-    otpReference,
-    selectedCampus,
   ]);
 
-  useEffect(() => {
-    if (step === "done") {
-      try {
-        localStorage.removeItem(ONBOARD_STORAGE_KEY);
-      } catch {
-        // ignore
-      }
+  // one handler for every failed call: back to sign-in when the session is
+  // gone, the countdown on RATE_LIMITED, otherwise show the problem
+  function fail(e: unknown): ApiError {
+    const err = asApiError(e);
+    if (isSignedOut(err)) {
+      setCodeModalOpen(false);
+      setStep(contactValue ? "signin" : "choice");
     }
-  }, [step]);
+    rateLimit.trip(err);
+    setError(err);
+    return err;
+  }
 
-  // "done" isn't a real destination — membership.nextStep decides whether
-  // this patient owes a screening or lands on the day view, for both a
-  // fresh join and a returning session that resolved straight to "done"
+  // loads behind a screen only show what went wrong (setError is stable, so
+  // these effects don't re-run on every render)
+  const showLoadError = useCallback((e: unknown) => {
+    setError(asApiError(e));
+  }, []);
+
+  // the profile drives the programme (campus id), grade (grades) and finish
+  // (summary) steps
   useEffect(() => {
-    if (step !== "done") return;
+    if (
+      devJumpStep ||
+      profile ||
+      (step !== "programme" && step !== "grade" && step !== "finish")
+    ) {
+      return;
+    }
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await getVersionMembership(VERSION_CODE);
-        if (cancelled) return;
-        if (res.data?.screeningDue || res.data?.nextStep === "SCREENING") {
-          router.push("/screening");
-        } else {
-          router.push("/home");
-        }
-      } catch {
-        if (!cancelled) router.push("/home");
-      }
-    })();
+    patient
+      .getProfile()
+      .then((p) => {
+        if (!cancelled) setProfile(p);
+      })
+      .catch((e) => {
+        if (!cancelled) showLoadError(e);
+      });
     return () => {
       cancelled = true;
     };
-  }, [step, router]);
+  }, [step, profile, devJumpStep, showLoadError]);
 
+  // school type: two cards (HIGH_SCHOOL, COLLEGE). Nothing is saved here.
   useEffect(() => {
-    if (resendIn <= 0) return;
-    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendIn]);
+    if (step !== "schoolType" || cards.length) return;
+    let cancelled = false;
+    getCampusTypes()
+      .then((types) => {
+        if (cancelled) return;
+        setCards([...new Set(types.map((t) => t.card))]);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        // still offer both cards if the list couldn't load
+        setCards(["HIGH_SCHOOL", "COLLEGE"]);
+        showLoadError(e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, cards.length, showLoadError]);
 
-  // land on the first OTP box the moment this step is reached — the whole
-  // point of a 6-digit code is typing it immediately, no click required
-  useEffect(() => {
-    if (step !== "verify") return;
-    const raf = requestAnimationFrame(() => otpRefs.current[0]?.focus());
-    return () => cancelAnimationFrame(raf);
-  }, [step]);
+  const loadCampuses = useCallback(
+    async (page: number) => {
+      if (!card) return;
+      setCampusesLoading(true);
+      try {
+        const res = await searchCampuses({
+          card,
+          q: campusQuery.trim() || undefined,
+          page,
+          size: 20,
+        });
+        setCampusPage((prev) => ({
+          items: page === 0 ? res.items : [...prev.items, ...res.items],
+          page: res.page,
+          total: res.total,
+        }));
+      } catch (e) {
+        showLoadError(e);
+      } finally {
+        setCampusesLoading(false);
+      }
+    },
+    [card, campusQuery, showLoadError],
+  );
 
+  // campus search: paged, alphabetical, 300 ms after typing stops
   useEffect(() => {
     if (step !== "campus") return;
+    const t = setTimeout(() => loadCampuses(0), 300);
+    return () => clearTimeout(t);
+  }, [step, loadCampuses]);
+
+  // programmes the campus offers (or the whole catalogue when it offers none)
+  useEffect(() => {
+    if (step !== "programme" || !profile?.campus) return;
+    const campusId = profile.campus.id;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      getProgrammes(campusId, programmeQuery.trim() || undefined)
+        .then((res) => {
+          if (!cancelled) setProgrammes(res);
+        })
+        .catch((e) => {
+          if (!cancelled) showLoadError(e);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [step, profile, programmeQuery, showLoadError]);
+
+  // NSMQ team picker: the schools taking part in this version
+  useEffect(() => {
+    if (step !== "nsmqCampus" || !versionCode || devJumpStep) return;
     let cancelled = false;
     const t = setTimeout(() => {
       setCampusesLoading(true);
-      getVersionCampuses(VERSION_CODE, campusQuery || undefined)
+      getVersionCampuses(versionCode, teamQuery.trim() || undefined)
         .then((res) => {
-          if (!cancelled) setCampuses(res.data ?? []);
+          if (!cancelled) setTeamCampuses(res);
         })
         .catch((e) => {
-          if (!cancelled)
-            setError(e instanceof Error ? e.message : "Search failed");
+          if (!cancelled) showLoadError(e);
         })
         .finally(() => {
           if (!cancelled) setCampusesLoading(false);
@@ -559,7 +650,24 @@ function OnboardPageInner() {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [step, campusQuery]);
+  }, [step, versionCode, teamQuery, devJumpStep, showLoadError]);
+
+  // the assent the join accepts - shown in the code modal, since the
+  // student must have read it
+  useEffect(() => {
+    if (step !== "nsmqCampus" || !versionCode || assentText !== null) return;
+    let cancelled = false;
+    getVersion(versionCode)
+      .then((v) => {
+        if (!cancelled) setAssentText(v.assentText ?? "");
+      })
+      .catch(() => {
+        // non-fatal: a join without it answers ASSENT_REQUIRED
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, versionCode, assentText]);
 
   function pickContactMethod(type: ContactType) {
     setContactType(type);
@@ -569,44 +677,34 @@ function OnboardPageInner() {
   }
 
   async function submitContact() {
+    if (!contactValue.trim()) return;
+    // phones are accepted as typed; the +233 prefix is shown beside the box
     const value =
       contactType === "PHONE"
         ? `+233${contactValue.replace(/\D/g, "").replace(/^0+/, "")}`
         : contactValue.trim();
-    if (!contactValue.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await checkContact(contactType, value);
+      const res = await auth.lookup(value);
       setContactValue(value);
-      if (res.data?.exists) {
-        // always go through sign-in rather than guessing from locally-cached
-        // userId/otpReference - that shortcut used to resend an OTP for
-        // whatever account matched local state, which broke the moment that
-        // account got verified elsewhere in the meantime ("Account is
-        // already verified. Please sign in."). Sign-in's own nextStep
-        // handling already covers both real outcomes correctly: an
-        // unverified account gets a *fresh* otpReference and lands on
-        // "verify" (see submitSignin), and a verified, already-enrolled
-        // account is routed straight past onboarding via routeByNextStep.
-        setUserId(res.data.userId ?? "");
-        setSigninNickname(res.data.nickname ?? "there");
+      if (res.exists) {
+        setSigninNickname(res.nickname ?? "there");
         setStep("signin");
       } else {
         setStep("signup");
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Something went wrong");
+      fail(e);
     } finally {
       setLoading(false);
     }
   }
 
-  const passwordRules = {
-    length: password.length >= 6,
-    letter: /[A-Za-z]/.test(password),
-    number: /[0-9]/.test(password),
-  };
+  function resetOtp() {
+    setOtp("");
+    document.getElementById(OTP_INPUT_ID)?.focus();
+  }
 
   async function submitSignup() {
     if (
@@ -617,266 +715,136 @@ function OnboardPageInner() {
       !dobMonth ||
       !dobYear
     ) {
-      setError("Please fill in every field.");
+      setError(localError("Please fill in every field."));
       return;
     }
-    if (
-      !passwordRules.length ||
-      !passwordRules.letter ||
-      !passwordRules.number
-    ) {
-      setError("Password needs 6+ characters, a letter, and a number.");
+    if (!passwordOk(password)) {
+      setError(localError(PASSWORD_MESSAGE));
       return;
     }
+    if (nicknameTaken) return;
     const monthIndex = MONTHS.indexOf(dobMonth) + 1;
     const dateOfBirth = `${dobYear}-${String(monthIndex).padStart(2, "0")}-${dobDay.padStart(2, "0")}`;
 
     setLoading(true);
     setError(null);
-    const referralHandle = getReferralHandle();
     try {
-      const res = await signup({
-        contactType,
+      // no referral here: the backend has no field for it (the handle from
+      // `?ref=` is still captured client-side, see src/lib/referral.ts)
+      await auth.signUp({
         contact: contactValue,
-        name: name.trim(),
+        password,
+        fullName: name.trim(),
         nickname: nickname.trim(),
         gender,
         dateOfBirth,
-        password,
-        versionCode: VERSION_CODE,
-        ...(referralHandle ? { referralHandle } : {}),
       });
-      clearReferralHandle();
-      setUserId(res.data?.userId ?? "");
-      if (res.data?.otpReference) {
-        setOtpReference(res.data.otpReference);
-        setResendIn(57);
-        setStep("verify");
-      } else if (res.data?.userId) {
-        const otpRes = await sendOtp(res.data.userId);
-        setOtpReference(otpRes.data?.otpReference ?? "");
-        setResendIn(otpRes.data?.expiresInSeconds ?? 57);
-        setStep("verify");
-      }
+      setOtp("");
+      resend.restart(RESEND_SECONDS);
+      setStep("verify");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Something went wrong");
+      fail(e);
     } finally {
       setLoading(false);
     }
   }
 
-  async function resendOtp() {
-    if (resendIn > 0 || !userId) return;
-    setLoading(true);
-    try {
-      const res = await sendOtp(userId);
-      setOtpReference(res.data?.otpReference ?? otpReference);
-      setResendIn(res.data?.expiresInSeconds ?? 57);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't resend the code");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function completeVerify(fullCode: string) {
+  // one resend for both code screens - the purpose matches the screen's
+  // verify call
+  async function resendCode(purpose: CodePurpose) {
+    if (resend.isRunning && resend.secondsLeft > 0) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await verifyOtp(otpReference, fullCode);
-      await routeByNextStep(res.data?.nextStep, "campus");
+      await auth.resendCode(contactValue, purpose);
+      resend.restart(RESEND_SECONDS);
+      showToast(SENT_COPY);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "That code didn't work");
-      setOtp(Array(6).fill(""));
-      otpRefs.current[0]?.focus();
+      const err = fail(e);
+      if (err.code === "RATE_LIMITED") {
+        resend.restart(Math.max(1, err.retryAfter ?? RESEND_SECONDS));
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  // recovery: "Forgot your password?" on the sign-in step
+  async function completeVerify(fullCode: string, purpose: CodePurpose) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await auth.verify(contactValue, purpose, fullCode);
+      if (purpose === "RECOVERY") {
+        if (!res.grant) throw localError("That code didn't work");
+        setGrant(res.grant);
+        setStep("resetPassword");
+      } else if (res.me) {
+        setPassword("");
+        await afterSignIn(res.me);
+      }
+    } catch (e) {
+      const err = fail(e);
+      // a dead code: let them ask for a new one right away
+      if (err.code === "CODE_EXPIRED" || err.code === "CODE_LOCKED") {
+        resend.restart(0);
+      }
+      resetOtp();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // recovery: "Forgot your password?" on the sign-in step. Always 202, so the
+  // copy never claims the account exists.
   async function submitForgotPassword() {
     setLoading(true);
     setError(null);
     try {
-      const res = await forgotPassword(contactValue);
-      setOtpReference(res.data?.otpReference ?? "");
-      setOtp(Array(6).fill(""));
-      setResendIn(57);
+      await auth.startRecovery(contactValue);
+      setOtp("");
+      resend.restart(RESEND_SECONDS);
       setStep("forgotVerify");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Something went wrong");
+      fail(e);
     } finally {
       setLoading(false);
     }
   }
-
-  // recovery resend can't reuse resendOtp() - that re-sends via userId, which
-  // this (possibly signed-out) flow never has. Re-request a recovery OTP
-  // against the contact instead.
-  async function resendForgotOtp() {
-    if (resendIn > 0) return;
-    setLoading(true);
-    try {
-      const res = await forgotPassword(contactValue);
-      setOtpReference(res.data?.otpReference ?? otpReference);
-      setResendIn(57);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Couldn't resend the code");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // reuses the same OTP-verify endpoint as completeVerify, but a recovery
-  // otpReference returns only a passwordResetToken - no cookies, no
-  // nextStep routing, since this account isn't being signed in here.
-  async function completeForgotVerify(fullCode: string) {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await verifyOtp(otpReference, fullCode);
-      if (res.data?.passwordResetToken) {
-        setPasswordResetToken(res.data.passwordResetToken);
-        setStep("resetPassword");
-      } else {
-        setError("That code didn't work");
-        setOtp(Array(6).fill(""));
-        otpRefs.current[0]?.focus();
-      }
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "That code didn't work");
-      setOtp(Array(6).fill(""));
-      otpRefs.current[0]?.focus();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const newPasswordRules = {
-    length: newPassword.length >= 6,
-    letter: /[A-Za-z]/.test(newPassword),
-    number: /[0-9]/.test(newPassword),
-  };
 
   async function submitResetPassword() {
-    if (
-      !newPasswordRules.length ||
-      !newPasswordRules.letter ||
-      !newPasswordRules.number
-    ) {
-      setError("Password needs 6+ characters, a letter, and a number.");
+    if (!passwordOk(newPassword)) {
+      setError(localError(PASSWORD_MESSAGE));
       return;
     }
     if (newPassword !== confirmNewPassword) {
-      setError("Passwords don't match.");
+      setError(localError("Passwords don't match."));
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      await setPasswordApi(passwordResetToken, newPassword, confirmNewPassword);
-      setSigninPassword("");
+      // signs in, and ends every other session
+      const me = await auth.setPassword(grant, newPassword);
       setNewPassword("");
       setConfirmNewPassword("");
-      setPasswordResetToken("");
-      setStep("signin");
+      setGrant("");
+      await afterSignIn(me);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleOtpChange(i: number, raw: string) {
-    const v = raw.replace(/\D/g, "").slice(0, 1);
-    const next = [...otp];
-    next[i] = v;
-    setOtp(next);
-    if (v && i < otp.length - 1) otpRefs.current[i + 1]?.focus();
-    if (next.every((c) => c) && next.join("").length === otp.length) {
-      if (step === "forgotVerify") {
-        completeForgotVerify(next.join(""));
-      } else {
-        completeVerify(next.join(""));
-      }
-    }
-  }
-
-  function pickPhoto() {
-    photoInputRef.current?.click();
-  }
-
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setPhotoFile(file);
-    setPhotoZoom(1);
-    setPhotoPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
-  }
-
-  // crops the preview to a square at the chosen zoom, matching what's shown
-  // in the circular frame, rather than uploading the original untouched file
-  function cropPhotoToBlob(
-    img: HTMLImageElement,
-    zoom: number,
-  ): Promise<Blob | null> {
-    const size = 480;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return Promise.resolve(null);
-    const side = Math.min(img.naturalWidth, img.naturalHeight) / zoom;
-    const sx = (img.naturalWidth - side) / 2;
-    const sy = (img.naturalHeight - side) / 2;
-    ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
-    return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-  }
-
-  async function submitPhoto() {
-    // dev-jump previews this screen with no real session — the real
-    // upload endpoint would just 401, so simulate success and move on
-    if (devJumpStep) {
-      setStep("campus");
-      return;
-    }
-    // a photo is required now - the Next button stays disabled until one is
-    // chosen, so this is just a defensive no-op, not a real path
-    if (!photoFile || !photoPreviewUrl) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const img = document.createElement("img");
-      const loaded = new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Couldn't read that photo"));
-      });
-      img.src = photoPreviewUrl;
-      await loaded;
-      const blob = await cropPhotoToBlob(img, photoZoom);
-      if (!blob) throw new Error("Couldn't process that photo");
-      const res = await uploadProfilePhoto(blob);
-      await routeByNextStep(res.data?.nextStep, "campus");
-    } catch (e) {
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        // session died between the earlier check and this submit - send
-        // them to sign in instead of surfacing a raw 403; routeByNextStep
-        // (via the "done" effect / a future session check) resumes them
-        // back at photo once they're re-authenticated
+      const err = fail(e);
+      if (err.code === "GRANT_EXPIRED") {
+        // the grant lasts 10 minutes and works once - start recovery again
+        setGrant("");
         setStep("signin");
-        return;
       }
-      setError(
-        e instanceof ApiError ? e.message : "Couldn't upload that photo",
-      );
     } finally {
       setLoading(false);
     }
+  }
+
+  // OtpInput only accepts digits, moves focus itself and calls this once
+  // every box is filled
+  function handleOtpComplete(fullCode: string) {
+    completeVerify(fullCode, step === "forgotVerify" ? "RECOVERY" : "SIGN_UP");
   }
 
   async function submitSignin() {
@@ -884,189 +852,187 @@ function OnboardPageInner() {
     setLoading(true);
     setError(null);
     try {
-      const res = await signin(contactValue, signinPassword, VERSION_CODE);
-      if (!res.data?.accessToken && res.data?.otpReference) {
-        setUserId(res.data.userId ?? "");
-        setOtpReference(res.data.otpReference);
-        setResendIn(57);
-        setStep("verify");
-        return;
-      }
-      await routeByNextStep(
-        res.data?.nextStep ?? res.data?.activeVersion?.nextStep,
-        "campus",
-      );
+      const me = await auth.signIn(contactValue, signinPassword);
+      setSigninPassword("");
+      await afterSignIn(me);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Something went wrong");
+      fail(e);
     } finally {
       setLoading(false);
     }
   }
 
-  async function pickCampus(item: CampusPickerItem) {
-    // shows a spinner on this specific card while the PUT below is in
-    // flight - the modal can't open before it resolves, since the join-code
-    // submit that follows needs the campus already selected server-side
-    setPickingCampusId(item.campusId);
-    // dev-jump previews this screen with no real session — skip the real
-    // PUT, which would just 401, and open the code modal directly
+  // ---- onboarding steps: each saves on pick and answers the new `next` ----
+
+  async function savePhoto(skip: boolean) {
+    // dev-jump previews this screen with no real session
     if (devJumpStep) {
-      setSelectedCampus(item);
-      setCodeModalOpen(true);
-      setPickingCampusId(null);
+      setStep("schoolType");
       return;
     }
+    if (!skip && !photo) return;
     setLoading(true);
     setError(null);
     try {
-      await selectVersionCampus(VERSION_CODE, item.campusId);
-      setSelectedCampus(item);
-      setCodeModalOpen(true);
+      const home =
+        skip || !photo
+          ? await patient.skipPhoto()
+          : await patient.uploadPhoto(photo.blob);
+      setProfile(home);
+      go(home.next);
     } catch (e) {
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        setStep("signin");
-        return;
-      }
-      setError(
-        e instanceof ApiError ? e.message : "Couldn't select that school",
-      );
+      fail(e);
     } finally {
       setLoading(false);
-      setPickingCampusId(null);
     }
   }
 
-  // per the guide: DELETE the recorded campus choice when they back out of
-  // the code modal, so nextStep doesn't keep resuming at ACCESS_CODE for a
-  // school they backed away from browsing
-  async function backOutOfCodeModal() {
-    setCodeModalOpen(false);
-    if (devJumpStep) {
-      setSelectedCampus(null);
-      return;
-    }
+  async function pickCampus(item: CampusCardItem) {
+    setPickingId(item.id);
+    setError(null);
     try {
-      await deleteVersionCampus(VERSION_CODE);
-    } catch {
-      // best-effort - if this fails the server still has the old campus
-      // recorded, but picking a school again on the next visit re-PUTs it
+      const home = await patient.setCampus(item.id);
+      setProfile(home);
+      setProgrammes(null);
+      go(home.next);
+    } catch (e) {
+      fail(e);
     } finally {
-      setSelectedCampus(null);
+      setPickingId(null);
     }
   }
 
-  async function completeCode(
-    fullCode: string,
-    retried = false,
-    versionOverride?: string,
-  ) {
-    if (!selectedCampus) return;
-    // dev-jump previews this screen against a fake campus with no real
-    // session — no real code could ever validate, so simulate success
-    if (devJumpStep) {
-      setCodeState("good");
-      setCodeMessage("Great, you're in! (dev preview)");
-      setTimeout(() => {
-        setCodeModalOpen(false);
-        setStep("done");
-      }, 1100);
-      return;
+  async function pickProgramme(item: OfferedProgramme) {
+    setPickingId(item.programmeId);
+    setError(null);
+    try {
+      const home = await patient.setProgramme(item.programmeId);
+      setProfile(home);
+      go(home.next);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setPickingId(null);
     }
+  }
+
+  async function pickGrade(grade: Grade) {
+    setPickingId(grade);
+    setError(null);
+    try {
+      const home = await patient.setGrade(grade);
+      setProfile(home);
+      go(home.next);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setPickingId(null);
+    }
+  }
+
+  async function finish() {
     setLoading(true);
+    setError(null);
     try {
-      const res = await joinVersionTeam(VERSION_CODE, {
-        campusId: selectedCampus.campusId,
-        accessCode: fullCode,
-        assentAccepted: true,
-        assentTextVersion: versionOverride ?? assentTextVersion,
-      });
-      setCodeState("good");
-      // a retried request after a timeout can land on a membership that's
-      // already active — the guide is explicit that this counts as success
-      setCodeMessage(
-        res.data?.alreadyJoined
-          ? "You're already on this team!"
-          : "Great, you're in!",
-      );
-      setTimeout(() => {
-        setCodeModalOpen(false);
-        routeByNextStep(res.data?.nextStep, "done");
-      }, 1100);
+      const home = await patient.finishOnboarding();
+      go(home.next);
     } catch (e) {
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        setCodeModalOpen(false);
-        setStep("signin");
-        return;
-      }
-      const code = e instanceof ApiError ? e.code : undefined;
-
-      // the assent version changed server-side since it was fetched — the
-      // agreement isn't shown to the student here, so refetch the current
-      // version and retry silently once rather than surfacing this at all
-      if ((code === "ASSENT_REQUIRED" || code === "ASSENT_STALE") && !retried) {
-        try {
-          const v = await getLockinVersion(VERSION_CODE);
-          const fresh = v.data?.assentTextVersion ?? "";
-          setAssentTextVersion(fresh);
-          await completeCode(fullCode, true, fresh);
-          return;
-        } catch {
-          // fall through to the generic error below
-        }
-      }
-
-      // this version isn't the patient's active enrolment (e.g. resumed on a
-      // different device) — activate it once, then retry the same join
-      if (code === "NO_ACTIVE_ENROLLMENT" && !retried) {
-        try {
-          await activateEnrollment(VERSION_CODE);
-          await completeCode(fullCode, true);
-          return;
-        } catch {
-          // fall through to the generic error below
-        }
-      }
-
-      setCodeState("bad");
-      setCodeMessage(
-        (code && JOIN_ERROR_COPY[code]) ||
-          (e instanceof ApiError
-            ? e.message
-            : "That access code didn't work. Please try again."),
-      );
+      const err = fail(e);
+      // names the missing step - send them there
+      const missing = err.fieldError("next") as PatientNext | undefined;
+      if (err.code === "ONBOARDING_INCOMPLETE" && missing) go(missing);
     } finally {
       setLoading(false);
     }
   }
 
-  function handleCodeChange(i: number, raw: string) {
-    // strips anything that isn't alphanumeric so pasting a full code (in
-    // case a school hands it out with separators) into any box still works
-    const cleaned = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    const next = [...code];
+  // ---- NSMQ: pick the team's school, then the access code ----
 
-    if (!cleaned) {
-      next[i] = "";
-      setCode(next);
+  async function pickTeam(item: PickerCampus) {
+    setPickingId(item.id);
+    // dev-jump previews this screen with no real session
+    if (devJumpStep || !versionCode) {
+      setSelectedTeam(item);
+      setCodeModalOpen(true);
+      setPickingId(null);
+      return;
+    }
+    setError(null);
+    try {
+      await selectCampus(versionCode, item.id);
+      setSelectedTeam(item);
+      setCode("");
       setCodeState("");
       setCodeMessage("");
+      setCodeModalOpen(true);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setPickingId(null);
+    }
+  }
+
+  function joined(message: string) {
+    setCodeState("good");
+    setCodeMessage(message);
+    setTimeout(async () => {
+      setCodeModalOpen(false);
+      if (devJumpStep) return;
+      try {
+        // joining onboards the student - route by the fresh `next`
+        setEnrollment(null);
+        clearVersionCode();
+        go((await auth.getMe()).next, null);
+      } catch {
+        router.push("/home");
+      }
+    }, 1100);
+  }
+
+  async function completeCode(fullCode: string) {
+    if (!selectedTeam) return;
+    if (devJumpStep || !versionCode) {
+      joined("Great, you're in! (dev preview)");
       return;
     }
-
-    let idx = i;
-    for (const ch of cleaned) {
-      if (idx >= next.length) break;
-      next[idx] = ch;
-      idx++;
+    setCodeTraceId(undefined);
+    try {
+      await join(versionCode, {
+        campusId: selectedTeam.id,
+        code: fullCode,
+        assent: true,
+      });
+      joined("Great, you're in!");
+    } catch (e) {
+      const err = asApiError(e);
+      if (err.code === "ALREADY_ON_TEAM") {
+        // a retried join that already landed counts as success
+        joined("You're already on this team!");
+        return;
+      }
+      if (isSignedOut(err)) {
+        fail(err);
+        return;
+      }
+      rateLimit.trip(err);
+      setCodeState("bad");
+      setCodeMessage(err.message);
+      if (isUnexpected(err)) setCodeTraceId(err.traceId);
     }
-    setCode(next);
+  }
+
+  // OtpInput (allowLetters) keeps only letters/digits, uppercases them and
+  // strips separators from a pasted code, then calls completeCode once
+  // every box is filled; any edit clears the previous good/bad verdict
+  function handleCodeChange(value: string) {
+    setCode(value);
     setCodeState("");
     setCodeMessage("");
-    codeRefs.current[Math.min(idx, next.length - 1)]?.focus();
-    if (next.every((c) => c)) completeCode(next.join(""));
+    setCodeTraceId(undefined);
   }
 
   function goBack() {
+    setError(null);
     switch (step) {
       case "phone":
       case "email":
@@ -1077,67 +1043,78 @@ function OnboardPageInner() {
         setStep(contactType === "PHONE" ? "phone" : "email");
         return;
       case "verify":
-      case "photo":
-        // once the OTP is verified it's consumed server-side - "photo" can
-        // never step back into "verify" to re-enter a burned code
-        setStep(userId && signinNickname ? "signin" : "signup");
+        // a sign-up code is spent once verified - back means re-entering
+        // the form (signing up again replaces the unfinished account)
+        setStep("signup");
         return;
       case "forgotVerify":
       case "resetPassword":
-        // same for recovery: a verified recovery OTP is one-time too -
-        // "resetPassword" skips straight back to "signin", never back
-        // through "forgotVerify"
+        // a verified recovery code is one-time too - back to sign-in
         setStep("signin");
         return;
-      case "campus":
+      case "schoolType":
+      case "nsmqCampus":
+        // back from School Type goes to the photo step
         setStep("photo");
         return;
-      case "code":
-        setStep("campus");
+      case "campus":
+        setStep("schoolType");
+        return;
+      case "programme":
+        setStep("schoolType");
+        return;
+      case "grade":
+        setStep("programme");
+        return;
+      case "finish":
+        setStep("grade");
         return;
       default:
         return;
     }
   }
 
+  const resendLabel =
+    resend.isRunning && resend.secondsLeft > 0
+      ? `Resend code in ${formatCountdown(resend.secondsLeft)}`
+      : "Send a new code";
+
   const nextConfig = (() => {
+    const pct = (s: Step) => `Next (${PROGRESS[s]}%)`;
     switch (step) {
       case "choice":
         return {
           show: true,
           enabled: !!selectedType,
-          label: `Next (${PROGRESS.choice}%)`,
+          label: pct("choice"),
           onClick: () => selectedType && pickContactMethod(selectedType),
         };
       case "phone":
       case "email":
         return {
           show: true,
-          enabled: !loading && contactValue.trim().length > 0,
-          label: loading ? "Checking…" : `Next (${PROGRESS[step]}%)`,
+          enabled:
+            !loading && !rateLimit.limited && contactValue.trim().length > 0,
+          label: rateLimit.label ?? (loading ? "Checking…" : pct(step)),
           onClick: submitContact,
         };
       case "signup":
         return {
           show: true,
-          enabled: !loading,
-          label: loading ? "Creating…" : `Next (${PROGRESS.signup}%)`,
+          enabled: !loading && !rateLimit.limited && !nicknameTaken,
+          label: rateLimit.label ?? (loading ? "Creating…" : pct("signup")),
           onClick: submitSignup,
         };
       case "signin":
         // signing in isn't a step in the linear onboarding sequence - it's a
-        // gate a returning user passes through, so it gets no percentage.
-        // Wherever they land after (done, or resuming at campus/code)
-        // already reflects their real progress.
+        // gate a returning user passes through, so it gets no percentage
         return {
           show: true,
-          enabled: !loading && signinPassword.length > 0,
-          label: loading ? "Signing in…" : "Sign In",
+          enabled: !loading && !rateLimit.limited && signinPassword.length > 0,
+          label: rateLimit.label ?? (loading ? "Signing in…" : "Sign In"),
           onClick: submitSignin,
         };
       case "resetPassword":
-        // recovery, like sign-in, isn't part of the linear sequence - no
-        // percentage on this button either.
         return {
           show: true,
           enabled:
@@ -1146,20 +1123,37 @@ function OnboardPageInner() {
           onClick: submitResetPassword,
         };
       case "photo":
-        // a photo is required to continue — too many patients were reaching
-        // the silent-skip path and ending up with no photo on file
         return {
           show: true,
-          enabled: !loading && !!photoPreviewUrl,
-          label: loading ? "One sec…" : `Next (${PROGRESS.photo}%)`,
-          onClick: submitPhoto,
+          enabled: !loading && !rateLimit.limited && !!photo,
+          label: rateLimit.label ?? (loading ? "One sec…" : pct("photo")),
+          onClick: () => savePhoto(false),
+        };
+      case "schoolType":
+        return {
+          show: true,
+          enabled: !!card,
+          label: pct("schoolType"),
+          onClick: () => {
+            setCampusQuery("");
+            setCampusPage({ items: [], page: 0, total: 0 });
+            setStep("campus");
+          },
+        };
+      case "finish":
+        return {
+          show: true,
+          enabled: !loading,
+          label: loading ? "Finishing…" : "Finish (100%)",
+          onClick: finish,
         };
       default:
         return { show: false, enabled: false, label: "", onClick: () => {} };
     }
   })();
 
-  const showFooter = step !== "done";
+  const warmBg =
+    "radial-gradient(118% 86% at 50% 16%, #733730 0%, #572621 42%, #3b1a17 74%, #2b1210 100%)";
 
   if (!sessionChecked) {
     return (
@@ -1167,16 +1161,15 @@ function OnboardPageInner() {
         <PhotoTestimonialPanel className="h-full w-[40%]" />
         <div
           className="flex flex-1 items-center justify-center"
-          style={{
-            background:
-              "radial-gradient(118% 86% at 50% 16%, #733730 0%, #572621 42%, #3b1a17 74%, #2b1210 100%)",
-          }}
+          style={{ background: warmBg }}
         >
-          <div className="border-gold size-8 animate-spin rounded-full border-2 border-t-transparent" />
+          <Spinner className="text-gold size-8" />
         </div>
       </div>
     );
   }
+
+  const wide = step === "campus" || step === "nsmqCampus";
 
   return (
     <div className="text-txt flex h-screen">
@@ -1186,19 +1179,10 @@ function OnboardPageInner() {
         className={`relative flex flex-1 flex-col overflow-y-auto px-8 sm:px-16 ${
           step === "photo" ? "py-4" : "py-10"
         }`}
-        style={{
-          background:
-            "radial-gradient(118% 86% at 50% 16%, #733730 0%, #572621 42%, #3b1a17 74%, #2b1210 100%)",
-        }}
+        style={{ background: warmBg }}
       >
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Image
-            src="/images/logo.webp"
-            alt="JustGo Health"
-            width={384}
-            height={67}
-            className="h-6 w-auto invert"
-          />
+          <Logo variant="light" className="h-6 w-auto sm:h-6" />
           <div className="land-pill whitespace-nowrap">
             Locking in for&nbsp;<b>NSMQ 2026</b>
           </div>
@@ -1206,7 +1190,7 @@ function OnboardPageInner() {
 
         <div
           className={`mx-auto flex w-full flex-1 flex-col justify-center ${
-            step === "campus" ? "max-w-none" : "max-w-md"
+            wide ? "max-w-none" : "max-w-md"
           } ${step === "photo" ? "py-4" : "py-10"}`}
         >
           <AnimatePresence mode="wait">
@@ -1225,25 +1209,14 @@ function OnboardPageInner() {
                   <p className="mt-2 text-white/60">
                     We&apos;ll use this to get you started.
                   </p>
-                  <div className="mt-8 grid grid-cols-2 gap-4">
-                    {(["PHONE", "EMAIL"] as ContactType[]).map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setSelectedType(type)}
-                        className={`flex flex-col items-center gap-3 rounded-2xl border py-10 font-bold transition-colors ${
-                          selectedType === type
-                            ? "border-yes bg-yes/10"
-                            : "hover:border-gold/60 border-white/10 bg-black/20 hover:bg-black/30"
-                        }`}
-                      >
-                        <span className="text-gold">
-                          {type === "PHONE" ? "☎" : "✉"}
-                        </span>
-                        {type}
-                      </button>
-                    ))}
-                  </div>
+                  <RadioGroup
+                    variant="card"
+                    aria-label="Phone or email"
+                    options={CONTACT_OPTIONS}
+                    value={selectedType ?? ""}
+                    onValueChange={(v) => setSelectedType(v as ContactType)}
+                    className="mt-8 grid-cols-2 gap-4 sm:grid-cols-2 [&>label]:justify-center [&>label]:rounded-2xl [&>label]:bg-black/20"
+                  />
                 </div>
               )}
 
@@ -1267,16 +1240,20 @@ function OnboardPageInner() {
                   >
                     {step === "phone" ? (
                       <div className="flex gap-3">
-                        <Field label="Ghana">
-                          <div
-                            className={`${inputClass} flex items-center gap-2`}
-                          >
-                            🇬🇭 +233
-                          </div>
+                        <Field label="Ghana" className="w-auto shrink-0">
+                          <Input
+                            readOnly
+                            tabIndex={-1}
+                            value="🇬🇭 +233"
+                            className={`${inputClass} w-28`}
+                          />
                         </Field>
                         <div className="flex-1">
-                          <Field label="Phone number">
-                            <input
+                          <Field
+                            label="Phone number"
+                            error={error?.fieldError("contact")}
+                          >
+                            <Input
                               className={inputClass}
                               type="tel"
                               inputMode="numeric"
@@ -1295,8 +1272,8 @@ function OnboardPageInner() {
                         </div>
                       </div>
                     ) : (
-                      <Field label="Email">
-                        <input
+                      <Field label="Email" error={error?.fieldError("contact")}>
+                        <Input
                           className={inputClass}
                           type="email"
                           autoComplete="email"
@@ -1307,7 +1284,7 @@ function OnboardPageInner() {
                         />
                       </Field>
                     )}
-                    {error && <p className="text-no text-sm">{error}</p>}
+                    <ApiErrorText error={formLevelError(error, ["contact"])} />
                   </form>
                 </div>
               )}
@@ -1329,16 +1306,23 @@ function OnboardPageInner() {
                       submitSignup();
                     }}
                   >
-                    <Field label="Your name">
-                      <input
+                    <Field
+                      label="Your name"
+                      error={error?.fieldError("fullName")}
+                    >
+                      <Input
                         className={inputClass}
                         placeholder="What's your name?"
+                        autoComplete="name"
                         value={name}
                         onChange={(e) => setName(smartName(e.target.value))}
                       />
                     </Field>
-                    <Field label="Nickname">
-                      <input
+                    <Field
+                      label="Nickname"
+                      error={nicknameTaken ?? error?.fieldError("nickname")}
+                    >
+                      <Input
                         className={inputClass}
                         placeholder="What should we call you?"
                         value={nickname}
@@ -1347,140 +1331,125 @@ function OnboardPageInner() {
                         }
                       />
                     </Field>
-                    <Field label="Gender">
-                      <div className="flex gap-3">
-                        {["Male", "Female"].map((g) => (
-                          <button
-                            key={g}
-                            type="button"
-                            onClick={() => setGender(g)}
-                            className={`flex-1 rounded-xl border px-4 py-3 font-medium transition-colors ${
-                              gender === g
-                                ? "border-yes bg-yes/15 text-yes"
-                                : "border-line text-txt bg-white/5"
-                            }`}
-                          >
-                            {g}
-                          </button>
-                        ))}
-                      </div>
+                    <Field label="Gender" error={error?.fieldError("gender")}>
+                      <ToggleGroup
+                        type="single"
+                        fullWidth
+                        aria-label="Gender"
+                        options={GENDER_OPTIONS}
+                        value={gender}
+                        // a single toggle group lets you click the active
+                        // option off again - keep the old "always one
+                        // picked once chosen" behaviour
+                        onValueChange={(v) => {
+                          if (v) setGender(v as Gender);
+                        }}
+                        className="border-line border bg-white/5"
+                      />
                     </Field>
-                    <Field label="Date of birth">
+                    <Field
+                      label="Date of birth"
+                      error={error?.fieldError("dateOfBirth")}
+                    >
                       <div className="flex gap-2">
-                        <CustomSelect
-                          className="min-w-0 flex-[2]"
+                        <Select
+                          className={`${inputClass} min-w-0 flex-[2]`}
+                          aria-label="Day"
                           placeholder="Day"
                           value={dobDay}
-                          onChange={setDobDay}
-                          options={DAYS}
+                          onValueChange={setDobDay}
+                          options={DAY_OPTIONS}
                         />
-                        <CustomSelect
-                          className="min-w-0 flex-[5]"
+                        <Select
+                          className={`${inputClass} min-w-0 flex-[5]`}
+                          aria-label="Month"
                           placeholder="Month"
                           value={dobMonth}
-                          onChange={setDobMonth}
-                          options={MONTHS}
-                          mobileLabels={MONTHS_SHORT}
+                          onValueChange={setDobMonth}
+                          options={MONTH_OPTIONS}
                         />
-                        <CustomSelect
-                          className="min-w-0 flex-[3]"
+                        <Select
+                          className={`${inputClass} min-w-0 flex-[3]`}
+                          aria-label="Year"
                           placeholder="Year"
                           value={dobYear}
-                          onChange={setDobYear}
-                          options={YEARS}
-                          defaultScrollValue="2005"
+                          onValueChange={setDobYear}
+                          options={YEAR_OPTIONS}
                         />
                       </div>
                     </Field>
-                    <Field label="Password">
-                      <div className="relative">
-                        <input
-                          className={inputClass}
-                          type={showPassword ? "text" : "password"}
-                          placeholder="Create a password"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowPassword((s) => !s)}
-                          className="text-muted absolute top-1/2 right-3 -translate-y-1/2 text-xs font-bold"
-                        >
-                          {showPassword ? "HIDE" : "SHOW"}
-                        </button>
-                      </div>
-                      <ul className="mt-1 flex flex-wrap gap-3 text-xs">
-                        {[
-                          ["length", "6+ characters"],
-                          ["letter", "One letter"],
-                          ["number", "One number"],
-                        ].map(([key, label]) => (
-                          <li
-                            key={key}
-                            className={
-                              passwordRules[key as keyof typeof passwordRules]
-                                ? "text-yes"
-                                : "text-muted"
-                            }
-                          >
-                            {passwordRules[key as keyof typeof passwordRules]
-                              ? "✓ "
-                              : "· "}
-                            {label}
-                          </li>
-                        ))}
-                      </ul>
+                    <Field
+                      label="Password"
+                      error={error?.fieldError("password")}
+                    >
+                      <PasswordInput
+                        className={inputClass}
+                        autoComplete="new-password"
+                        placeholder="Create a password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        showStrength
+                        rules={PASSWORD_RULES}
+                      />
                     </Field>
-                    {error && <p className="text-no text-sm">{error}</p>}
+                    <ApiErrorText
+                      error={formLevelError(error, SIGNUP_FIELDS)}
+                    />
                   </form>
                 </div>
               )}
 
-              {step === "verify" && (
+              {(step === "verify" || step === "forgotVerify") && (
                 <div className="text-center">
                   <h1 className="text-3xl font-extrabold tracking-tight">
-                    Enter Verification Code
+                    {step === "verify"
+                      ? "Enter Verification Code"
+                      : "Enter account recovery code"}
                   </h1>
                   <p className="text-muted mt-2">
-                    A 6-digit verification code was just sent to
+                    {step === "verify"
+                      ? "A 6-digit verification code was just sent to"
+                      : SENT_COPY}
                     <br />
                     <strong className="text-txt">{contactValue}</strong>
                   </p>
-                  <div className="mt-6 flex justify-center gap-[1.5vw] sm:gap-2">
-                    {otp.map((v, i) => (
-                      <input
-                        key={i}
-                        ref={(el) => {
-                          otpRefs.current[i] = el;
-                        }}
-                        className="border-line text-txt focus:border-gold/60 aspect-[4/5] rounded-xl border bg-white/5 text-center font-bold outline-none"
-                        style={{
-                          width: "clamp(32px, 11vw, 44px)",
-                          fontSize: "clamp(16px, 4.5vw, 20px)",
-                        }}
-                        maxLength={1}
-                        inputMode="numeric"
-                        value={v}
-                        onChange={(e) => handleOtpChange(i, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Backspace" && !v && i > 0) {
-                            otpRefs.current[i - 1]?.focus();
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                  {error && <p className="text-no mt-4 text-sm">{error}</p>}
-                  <button
-                    type="button"
-                    onClick={resendOtp}
-                    disabled={resendIn > 0 || loading}
-                    className="text-muted mt-6 text-sm font-medium disabled:opacity-60"
+                  {/* autoFocus: land on the first box the moment this step
+                      is reached — the whole point of a 6-digit code is
+                      typing it immediately, no click required */}
+                  <OtpInput
+                    id={OTP_INPUT_ID}
+                    length={OTP_LENGTH}
+                    autoFocus
+                    disabled={loading}
+                    aria-label={
+                      step === "verify" ? "Verification code" : "Recovery code"
+                    }
+                    value={otp}
+                    onChange={setOtp}
+                    onComplete={handleOtpComplete}
+                    className={otpClass}
+                  />
+                  <ApiErrorText
+                    error={formLevelError(error, ["code"])}
+                    className="mt-4"
+                  />
+                  {error?.fieldError("code") && (
+                    <p className="text-no mt-4 text-sm">
+                      {error.fieldError("code")}
+                    </p>
+                  )}
+                  <Button
+                    variant="link"
+                    onClick={() =>
+                      resendCode(step === "verify" ? "SIGN_UP" : "RECOVERY")
+                    }
+                    disabled={
+                      (resend.isRunning && resend.secondsLeft > 0) || loading
+                    }
+                    className={resendClass}
                   >
-                    {resendIn > 0
-                      ? `Resend code in 0:${String(resendIn).padStart(2, "0")}`
-                      : "Resend code"}
-                  </button>
+                    {resendLabel}
+                  </Button>
                 </div>
               )}
 
@@ -1500,75 +1469,31 @@ function OnboardPageInner() {
                       submitSignin();
                     }}
                   >
-                    <Field label="Password">
-                      <input
+                    <Field
+                      label="Password"
+                      error={error?.fieldError("password")}
+                    >
+                      <Input
                         className={inputClass}
                         type="password"
+                        autoComplete="current-password"
                         placeholder="Enter your password"
                         value={signinPassword}
                         onChange={(e) => setSigninPassword(e.target.value)}
                       />
                     </Field>
                     <div className="-mt-2 flex justify-end">
-                      <button
-                        type="button"
+                      <Button
+                        variant="link"
                         onClick={submitForgotPassword}
-                        disabled={loading}
-                        className="text-muted hover:text-txt text-xs font-semibold disabled:opacity-60"
+                        disabled={loading || rateLimit.limited}
+                        className="text-muted hover:text-txt h-auto px-0 text-xs font-semibold hover:no-underline disabled:opacity-60"
                       >
                         Forgot your password?
-                      </button>
+                      </Button>
                     </div>
-                    {error && <p className="text-no text-sm">{error}</p>}
+                    <ApiErrorText error={formLevelError(error, ["password"])} />
                   </form>
-                </div>
-              )}
-
-              {step === "forgotVerify" && (
-                <div className="text-center">
-                  <h1 className="text-3xl font-extrabold tracking-tight">
-                    Enter account recovery code
-                  </h1>
-                  <p className="text-muted mt-2">
-                    A 6-digit recovery code was just sent to
-                    <br />
-                    <strong className="text-txt">{contactValue}</strong>
-                  </p>
-                  <div className="mt-6 flex justify-center gap-[1.5vw] sm:gap-2">
-                    {otp.map((v, i) => (
-                      <input
-                        key={i}
-                        ref={(el) => {
-                          otpRefs.current[i] = el;
-                        }}
-                        className="border-line text-txt focus:border-gold/60 aspect-[4/5] rounded-xl border bg-white/5 text-center font-bold outline-none"
-                        style={{
-                          width: "clamp(32px, 11vw, 44px)",
-                          fontSize: "clamp(16px, 4.5vw, 20px)",
-                        }}
-                        maxLength={1}
-                        inputMode="numeric"
-                        value={v}
-                        onChange={(e) => handleOtpChange(i, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Backspace" && !v && i > 0) {
-                            otpRefs.current[i - 1]?.focus();
-                          }
-                        }}
-                      />
-                    ))}
-                  </div>
-                  {error && <p className="text-no mt-4 text-sm">{error}</p>}
-                  <button
-                    type="button"
-                    onClick={resendForgotOtp}
-                    disabled={resendIn > 0 || loading}
-                    className="text-muted mt-6 text-sm font-medium disabled:opacity-60"
-                  >
-                    {resendIn > 0
-                      ? `Resend code in 0:${String(resendIn).padStart(2, "0")}`
-                      : "Resend code"}
-                  </button>
                 </div>
               )}
 
@@ -1588,70 +1513,30 @@ function OnboardPageInner() {
                       submitResetPassword();
                     }}
                   >
-                    <Field label="New password">
-                      <div className="relative">
-                        <input
-                          className={inputClass}
-                          type={showNewPassword ? "text" : "password"}
-                          placeholder="Create a new password"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowNewPassword((s) => !s)}
-                          className="text-muted absolute top-1/2 right-3 -translate-y-1/2 text-xs font-bold"
-                        >
-                          {showNewPassword ? "HIDE" : "SHOW"}
-                        </button>
-                      </div>
-                      <ul className="mt-1 flex flex-wrap gap-3 text-xs">
-                        {[
-                          ["length", "6+ characters"],
-                          ["letter", "One letter"],
-                          ["number", "One number"],
-                        ].map(([key, label]) => (
-                          <li
-                            key={key}
-                            className={
-                              newPasswordRules[
-                                key as keyof typeof newPasswordRules
-                              ]
-                                ? "text-yes"
-                                : "text-muted"
-                            }
-                          >
-                            {newPasswordRules[
-                              key as keyof typeof newPasswordRules
-                            ]
-                              ? "✓ "
-                              : "· "}
-                            {label}
-                          </li>
-                        ))}
-                      </ul>
+                    <Field
+                      label="New password"
+                      error={error?.fieldError("password")}
+                    >
+                      <PasswordInput
+                        className={inputClass}
+                        autoComplete="new-password"
+                        placeholder="Create a new password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        showStrength
+                        rules={PASSWORD_RULES}
+                      />
                     </Field>
                     <Field label="Confirm password">
-                      <div className="relative">
-                        <input
-                          className={inputClass}
-                          type={showConfirmNewPassword ? "text" : "password"}
-                          placeholder="Re-enter your new password"
-                          value={confirmNewPassword}
-                          onChange={(e) =>
-                            setConfirmNewPassword(e.target.value)
-                          }
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmNewPassword((s) => !s)}
-                          className="text-muted absolute top-1/2 right-3 -translate-y-1/2 text-xs font-bold"
-                        >
-                          {showConfirmNewPassword ? "HIDE" : "SHOW"}
-                        </button>
-                      </div>
+                      <PasswordInput
+                        className={inputClass}
+                        autoComplete="new-password"
+                        placeholder="Re-enter your new password"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      />
                     </Field>
-                    {error && <p className="text-no text-sm">{error}</p>}
+                    <ApiErrorText error={formLevelError(error, ["password"])} />
                   </form>
                 </div>
               )}
@@ -1669,90 +1554,265 @@ function OnboardPageInner() {
                     style={{ fontSize: "clamp(0.9rem, 1.5vw, 1.05rem)" }}
                   >
                     A quick photo so we know it&apos;s you,{" "}
-                    <strong className="text-txt">{nickname || "there"}</strong>.
+                    <strong className="text-txt">
+                      {profile?.nickname || nickname || "there"}
+                    </strong>
+                    .
                   </p>
 
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handlePhotoChange}
+                  {/* pick → crop (round) → preview; uploaded on Next. The
+                      cropped image is what's sent, 5 MB at most. */}
+                  <PhotoUpload
+                    className="mt-6"
+                    shape="round"
+                    aspect={1}
+                    maxSizeMB={5}
+                    accept="image/jpeg,image/png,image/webp"
+                    label="Upload a photo"
+                    value={photo?.previewUrl ?? null}
+                    disabled={loading}
+                    loading={loading}
+                    onChange={(next) => {
+                      setError(null);
+                      setPhoto((prev) => {
+                        if (prev) URL.revokeObjectURL(prev.previewUrl);
+                        return next;
+                      });
+                    }}
+                    onRemove={() => {
+                      setPhoto((prev) => {
+                        if (prev) URL.revokeObjectURL(prev.previewUrl);
+                        return null;
+                      });
+                    }}
                   />
 
-                  <div className="mt-4 flex flex-col items-center gap-[14px]">
-                    <button
-                      type="button"
-                      onClick={pickPhoto}
-                      className={`photo-circle${photoPreviewUrl ? "filled" : ""}`}
-                    >
-                      {photoPreviewUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- object URL preview, not a static/remote asset
-                        <img
-                          src={photoPreviewUrl}
-                          alt=""
-                          className="photo-img"
-                          style={{ transform: `scale(${photoZoom})` }}
-                        />
-                      ) : (
-                        <span className="photo-empty">
-                          <span className="photo-empty-icon">+</span>
-                          <span className="photo-empty-text">
-                            Upload a photo
+                  <ApiErrorText error={error} className="mt-4 min-h-[18px]" />
+
+                  <Button
+                    variant="link"
+                    onClick={() => savePhoto(true)}
+                    disabled={loading}
+                    className="text-muted hover:text-txt mt-2 h-auto px-0 text-sm font-semibold disabled:opacity-60"
+                  >
+                    Skip for now
+                  </Button>
+                </div>
+              )}
+
+              {step === "schoolType" && (
+                <div className="text-center">
+                  <h1 className="text-3xl font-extrabold tracking-tight">
+                    Where do you study?
+                  </h1>
+                  <p className="mt-2 text-white/60">
+                    Pick your kind of school.
+                  </p>
+                  {cards.length === 0 ? (
+                    <Spinner className="text-gold mx-auto mt-8 size-8" />
+                  ) : (
+                    <RadioGroup
+                      variant="card"
+                      aria-label="School type"
+                      options={cards.map((c) => ({
+                        value: c,
+                        label: (
+                          <span className="py-4 font-bold">
+                            {CARD_LABEL[c]}
                           </span>
-                        </span>
-                      )}
-                    </button>
-
-                    <div className={`zoom-row${photoPreviewUrl ? "on" : ""}`}>
-                      <button
-                        type="button"
-                        className="zoom-sign"
-                        disabled={!photoPreviewUrl}
-                        onClick={() =>
-                          setPhotoZoom((z) => Math.max(1, z - 0.1))
-                        }
-                      >
-                        −
-                      </button>
-                      <input
-                        type="range"
-                        className="zoom-slider"
-                        min={1}
-                        max={2.5}
-                        step={0.05}
-                        value={photoZoom}
-                        disabled={!photoPreviewUrl}
-                        onChange={(e) => setPhotoZoom(Number(e.target.value))}
-                      />
-                      <button
-                        type="button"
-                        className="zoom-sign"
-                        disabled={!photoPreviewUrl}
-                        onClick={() =>
-                          setPhotoZoom((z) => Math.min(2.5, z + 0.1))
-                        }
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <p className="text-no min-h-[18px] text-sm">{error}</p>
-
-                    {photoPreviewUrl && (
-                      <button
-                        type="button"
-                        onClick={pickPhoto}
-                        className="replace-btn"
-                      >
-                        Choose a different photo
-                      </button>
-                    )}
-                  </div>
+                        ),
+                      }))}
+                      value={card}
+                      onValueChange={(v) => setCard(v as CampusCard)}
+                      className="mt-8 grid-cols-2 gap-4 sm:grid-cols-2 [&>label]:justify-center [&>label]:rounded-2xl [&>label]:bg-black/20"
+                    />
+                  )}
+                  <ApiErrorText error={error} className="mt-4" />
                 </div>
               )}
 
               {step === "campus" && (
+                <div>
+                  <h1 className="text-3xl font-extrabold tracking-tight">
+                    Which school do you go to?
+                  </h1>
+                  <Input
+                    size="sm"
+                    className={`${inputClass} mt-4`}
+                    aria-label="Search your school"
+                    placeholder="Search your school"
+                    value={campusQuery}
+                    onChange={(e) => setCampusQuery(e.target.value)}
+                  />
+                  <div className="mt-4">
+                    {!campusesLoading && campusPage.items.length === 0 && (
+                      <p className="text-muted py-6 text-center">
+                        No schools found.
+                      </p>
+                    )}
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      {campusPage.items.map((c) => (
+                        <ImageCard
+                          key={c.id}
+                          asChild
+                          image={c.logo?.url}
+                          title={c.fullName}
+                          subtitle={c.nicknames[0] ?? c.motto ?? undefined}
+                          badge={
+                            c.lockedIn > 0
+                              ? `${c.lockedIn} locked in`
+                              : undefined
+                          }
+                          className="border-gold border-[1.65px] text-white"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => pickCampus(c)}
+                            disabled={!!pickingId}
+                          >
+                            {pickingId === c.id && (
+                              <div className="absolute inset-0 z-[7] flex items-center justify-center bg-black/50">
+                                <Spinner className="text-gold size-8" />
+                              </div>
+                            )}
+                          </button>
+                        </ImageCard>
+                      ))}
+                    </div>
+                    {campusesLoading && (
+                      <p className="text-muted py-6 text-center">Searching…</p>
+                    )}
+                    {!campusesLoading &&
+                      campusPage.items.length < campusPage.total && (
+                        <div className="mt-6 flex justify-center">
+                          <Button
+                            variant="outline"
+                            className={backClass}
+                            onClick={() => loadCampuses(campusPage.page + 1)}
+                          >
+                            Show more schools
+                          </Button>
+                        </div>
+                      )}
+                  </div>
+                  <ApiErrorText error={error} className="mt-4" />
+                </div>
+              )}
+
+              {step === "programme" && (
+                <div>
+                  <h1 className="text-3xl font-extrabold tracking-tight">
+                    What do you study?
+                  </h1>
+                  {programmes?.fromCatalogue && (
+                    <p className="text-muted mt-2">
+                      Your school hasn&apos;t listed its programmes yet, so
+                      here&apos;s every programme we know.
+                    </p>
+                  )}
+                  <Input
+                    size="sm"
+                    className={`${inputClass} mt-4`}
+                    aria-label="Search programmes"
+                    placeholder="Search programmes"
+                    value={programmeQuery}
+                    onChange={(e) => setProgrammeQuery(e.target.value)}
+                  />
+                  <div className="mt-4 flex flex-col gap-2">
+                    {!programmes && (
+                      <Spinner className="text-gold mx-auto size-8" />
+                    )}
+                    {programmes?.items.length === 0 && (
+                      <p className="text-muted py-6 text-center">
+                        No programmes found.
+                      </p>
+                    )}
+                    {programmes?.items.map((p) => (
+                      <button
+                        key={p.programmeId}
+                        type="button"
+                        className={pickCardClass}
+                        disabled={!!pickingId}
+                        onClick={() => pickProgramme(p)}
+                      >
+                        <span className="flex items-center justify-between gap-3">
+                          <span className="font-bold">{p.fullName}</span>
+                          {pickingId === p.programmeId && (
+                            <Spinner className="text-gold size-5" />
+                          )}
+                        </span>
+                        {p.nicknames.length > 0 && (
+                          <span className="text-muted text-xs">
+                            {p.nicknames.join(" · ")}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <ApiErrorText error={error} className="mt-4" />
+                </div>
+              )}
+
+              {step === "grade" && (
+                <div>
+                  <h1 className="text-3xl font-extrabold tracking-tight">
+                    Which year are you in?
+                  </h1>
+                  <div className="mt-6 grid grid-cols-2 gap-3">
+                    {!profile && (
+                      <Spinner className="text-gold col-span-2 mx-auto size-8" />
+                    )}
+                    {profile?.grades.map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        className={cn(
+                          pickCardClass,
+                          "text-center font-bold",
+                          profile.grade === g && "border-gold",
+                        )}
+                        disabled={!!pickingId}
+                        onClick={() => pickGrade(g)}
+                      >
+                        {pickingId === g ? (
+                          <Spinner className="text-gold mx-auto size-5" />
+                        ) : (
+                          gradeLabel(g)
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <ApiErrorText error={error} className="mt-4" />
+                </div>
+              )}
+
+              {step === "finish" && (
+                <div className="text-center">
+                  <h1 className="text-3xl font-extrabold tracking-tight">
+                    You&apos;re all set
+                  </h1>
+                  {profile && (
+                    <div className="mt-4 flex flex-col gap-1">
+                      <p className="font-bold">{profile.campus?.fullName}</p>
+                      {profile.programme && (
+                        <p className="text-muted">
+                          {profile.programme.fullName}
+                        </p>
+                      )}
+                      {(profile.classOf || profile.gradeLabel) && (
+                        <p className="text-muted text-sm">
+                          {[profile.classOf, profile.gradeLabel]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <ApiErrorText error={error} className="mt-4" />
+                </div>
+              )}
+
+              {step === "nsmqCampus" && (
                 <div>
                   <h1 className="text-3xl font-extrabold tracking-tight">
                     Which school are you competing for?
@@ -1760,191 +1820,95 @@ function OnboardPageInner() {
                   <p className="text-muted mt-2">
                     Search for your school&apos;s NSMQ team.
                   </p>
-                  <input
-                    className="border-line focus:border-gold/60 text-txt placeholder:text-muted mt-4 w-full rounded-xl border bg-white/5 px-4 py-2 text-sm outline-none"
+                  <Input
+                    size="sm"
+                    className={`${inputClass} mt-4`}
+                    aria-label="Search your school"
                     placeholder="Search your school"
-                    value={campusQuery}
-                    onChange={(e) => setCampusQuery(e.target.value)}
+                    value={teamQuery}
+                    onChange={(e) => setTeamQuery(e.target.value)}
                   />
                   <div className="mt-4">
                     {campusesLoading && (
                       <p className="text-muted py-6 text-center">Searching…</p>
                     )}
-                    {!campusesLoading && campuses.length === 0 && (
+                    {!campusesLoading && teamCampuses.length === 0 && (
                       <p className="text-muted py-6 text-center">
                         No schools found.
                       </p>
                     )}
                     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                      {campuses.map((c) => {
-                        const bgUrl = c.logo ?? c.bannerPhoto;
-                        return (
+                      {teamCampuses.map((c) => (
+                        <ImageCard
+                          key={c.id}
+                          asChild
+                          title={c.fullName}
+                          subtitle={c.type}
+                          className="border-gold border-[1.65px] text-white"
+                        >
                           <button
-                            key={c.campusId}
                             type="button"
-                            onClick={() => pickCampus(c)}
-                            disabled={loading}
-                            className="border-gold group relative aspect-square overflow-hidden rounded-2xl border-[1.65px] text-left text-white shadow-[0_8px_22px_rgba(0,0,0,.45)] transition-transform duration-150 hover:-translate-y-1 hover:scale-[1.03] disabled:pointer-events-none disabled:opacity-60"
+                            onClick={() => pickTeam(c)}
+                            disabled={!!pickingId}
                           >
-                            <div
-                              className="absolute inset-0 bg-[#222] bg-cover bg-center transition-transform duration-500 group-hover:scale-[1.09]"
-                              style={
-                                bgUrl
-                                  ? { backgroundImage: `url('${bgUrl}')` }
-                                  : { background: CAMPUS_FALLBACK_BG }
-                              }
-                            />
-                            <div
-                              className="absolute inset-0"
-                              style={{
-                                background:
-                                  "linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.78) 75%)",
-                              }}
-                            />
-                            {c.state === "out" && (
-                              <div
-                                className="absolute inset-0 z-[2]"
-                                style={{
-                                  background:
-                                    "linear-gradient(180deg, rgba(43,18,16,.28), rgba(43,18,16,.52))",
-                                }}
-                              />
-                            )}
-
-                            {/* a shared flex row, not two independently-positioned
-                              pills - so a long whenLabel shrinks/truncates
-                              instead of overlapping the member-count pill */}
-                            <div className="absolute inset-x-3 top-3 z-[6] flex items-start justify-between gap-2">
-                              {typeof c.memberCount === "number" &&
-                              c.memberCount > 0 ? (
-                                <div
-                                  className="inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-extrabold"
-                                  style={{
-                                    background: "#c9f0dd",
-                                    color: "#0c3d26",
-                                    borderColor: "rgba(30,143,87,.45)",
-                                  }}
-                                >
-                                  <span
-                                    style={{
-                                      filter: "saturate(0) brightness(.35)",
-                                    }}
-                                  >
-                                    ⭐
-                                  </span>
-                                  <span>{c.memberCount}</span>
-                                </div>
-                              ) : (
-                                <span />
-                              )}
-
-                              {c.whenLabel && (
-                                <div
-                                  className="inline-flex min-w-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-extrabold"
-                                  style={campusPillStyle(c.state)}
-                                >
-                                  <span
-                                    className="size-[5px] shrink-0 rounded-full"
-                                    style={campusDotStyle(c.state)}
-                                  />
-                                  <span className="truncate">
-                                    {c.whenLabel}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="absolute right-0 bottom-[18px] left-0 z-[2] px-4">
-                              <div
-                                className={`text-xl font-bold ${c.state === "out" ? "opacity-90" : ""}`}
-                              >
-                                {c.fullName ?? c.nickname}
-                              </div>
-                              {c.fullName &&
-                                c.nickname &&
-                                c.nickname !== c.fullName && (
-                                  <div className="text-sm text-white/70 italic">
-                                    {c.nickname}
-                                  </div>
-                                )}
-                            </div>
-
-                            {pickingCampusId === c.campusId && (
+                            {pickingId === c.id && (
                               <div className="absolute inset-0 z-[7] flex items-center justify-center bg-black/50">
-                                <div className="border-gold size-8 animate-spin rounded-full border-2 border-t-transparent" />
+                                <Spinner className="text-gold size-8" />
                               </div>
                             )}
                           </button>
-                        );
-                      })}
+                        </ImageCard>
+                      ))}
                     </div>
                   </div>
-                  {error && <p className="text-no mt-4 text-sm">{error}</p>}
-                </div>
-              )}
-
-              {step === "done" && (
-                <div className="text-center">
-                  <h1 className="text-yes text-3xl font-extrabold tracking-tight">
-                    You&apos;re in!
-                  </h1>
-                  <p className="text-muted mt-3">Taking you there now…</p>
+                  <ApiErrorText error={error} className="mt-4" />
                 </div>
               )}
             </motion.div>
           </AnimatePresence>
         </div>
 
-        {showFooter && (
-          <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
-            <p className="text-xs text-white/50">
-              Designed with clinical experts and NSMQ alumni, just for you.
-            </p>
-            <div className="flex items-center gap-3">
-              {step === "choice" ? (
-                <Link
-                  href="/"
-                  className="rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:border-white/30 hover:text-white"
-                >
-                  Back
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={goBack}
-                  className="rounded-full border border-white/15 px-5 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:border-white/30 hover:text-white"
-                >
-                  Back
-                </button>
-              )}
-              {nextConfig.show && (
-                <button
-                  type="button"
-                  disabled={!nextConfig.enabled}
-                  onClick={nextConfig.onClick}
-                  className={`rounded-full px-5 py-2.5 text-sm font-semibold transition-colors ${
-                    nextConfig.enabled
-                      ? "bg-gold hover:bg-gold-light text-[#161207]"
-                      : "bg-white/10 text-white/40"
-                  }`}
-                >
-                  {nextConfig.label}
-                </button>
-              )}
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
+          <p className="text-xs text-white/50">
+            Designed with clinical experts and NSMQ alumni, just for you.
+          </p>
+          <div className="flex items-center gap-3">
+            {step === "choice" ? (
+              <Button asChild variant="outline" className={backClass}>
+                <Link href="/">Back</Link>
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={goBack} className={backClass}>
+                Back
+              </Button>
+            )}
+            {nextConfig.show && (
+              <Button
+                disabled={!nextConfig.enabled}
+                onClick={nextConfig.onClick}
+                className="hover:bg-gold-light font-semibold disabled:bg-white/10 disabled:text-white/40 disabled:opacity-100"
+              >
+                {nextConfig.label}
+              </Button>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       <CodeGateModal
         open={codeModalOpen}
-        campusName={selectedCampus?.fullName ?? selectedCampus?.nickname}
+        campusName={selectedTeam?.fullName}
+        length={ACCESS_CODE_LENGTH}
         code={code}
-        codeState={codeState}
-        codeMessage={codeMessage}
-        codeRefs={codeRefs}
+        codeState={rateLimit.limited ? "bad" : codeState}
+        codeMessage={rateLimit.label ?? codeMessage}
+        assentText={assentText}
+        disabled={rateLimit.limited}
+        traceId={codeTraceId}
         onCodeChange={handleCodeChange}
-        onClose={backOutOfCodeModal}
+        onComplete={(fullCode) => completeCode(fullCode)}
+        // there's no "unselect" in v2 - picking another school re-PUTs it
+        onClose={() => setCodeModalOpen(false)}
       />
     </div>
   );

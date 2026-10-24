@@ -1,62 +1,77 @@
 "use client";
 
-import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
-import { DomeBoard } from "@/components/screening/dome-board";
-import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
-import { Toast, useToast } from "@/components/shared/toast";
-import { CARRIED_BOARD_KEY, ONBOARD_STORAGE_KEY } from "@/lib/constants";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ApiError,
+  Avatar,
+  Button,
+  DomeBoard,
+  Logo,
+  Spinner,
+  useCountdown,
+} from "@just-gohealth/ui";
+import { EditProfileDialog } from "@/components/home/edit-profile-dialog";
+import { CarePrompt } from "@/components/nsmq/care-prompt";
+import { WaitingRoom } from "@/components/nsmq/waiting-room";
+import { ApiErrorText } from "@/components/shared/api-error-text";
+import { ctaButtonClass } from "@/components/shared/cta";
+import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
+import { useToast } from "@/components/shared/toast";
+import { signOutPatient } from "@/lib/sign-out";
+import { rememberVersionCode } from "@/lib/version-link";
+import { toDomeSections } from "@/lib/v2/dome";
+import type { ApiError } from "@/lib/v2/http";
+import { asApiError, isSignedOut } from "@/lib/v2/errors";
+import { KIND_LABEL, formatTimeLeft, secondsUntil } from "@/lib/v2/labels";
+import {
+  acceptAssent,
   acknowledgeCare,
-  getHomeProfile,
-  getLatestBoard,
-  getVersionMembership,
-  logout,
-  retakeScreening,
-  type HomeProfileResponse,
-  type MembershipResponse,
-  type ScreeningBoard,
-} from "@/lib/api";
-import { MOCK_SCREENING_BOARD } from "../screening/dev-mock";
-
-const VERSION_CODE = "nsmq2026";
-
-function readCarriedBoard(): ScreeningBoard | null {
-  try {
-    const raw = sessionStorage.getItem(CARRIED_BOARD_KEY);
-    return raw ? (JSON.parse(raw) as ScreeningBoard) : null;
-  } catch {
-    return null;
-  }
-}
-
-function clearCarriedBoard() {
-  try {
-    sessionStorage.removeItem(CARRIED_BOARD_KEY);
-  } catch {
-    // ignore unavailable storage
-  }
-}
+  getEnrollments,
+  getRuns,
+  getStatus,
+  retakeRun,
+} from "@/lib/v2/nsmq";
+import { getProfile } from "@/lib/v2/patient";
+import { activeEnrollment, latestSubmittedRun } from "@/lib/v2/runs";
+import type {
+  DueRun,
+  EnrollmentStatusView,
+  PatientHome,
+  StudentRun,
+} from "@/lib/v2/types";
+import {
+  MOCK_STATUS,
+  MOCK_SUBMITTED_RUN,
+  MOCK_URGENT_RUN,
+} from "../screening/dev-mock";
 
 // dev-only shortcut so the day view can be reviewed without a real test
 // account — never active in a production build regardless of query string
 const MOCK_ENABLED = process.env.NODE_ENV !== "production";
 
-const MOCK_MEMBERSHIP: MembershipResponse = {
-  teamId: 7,
-  campusId: 42,
-  campusName: "Presbyterian Boys Senior High School",
-  teamStatus: "ACTIVE",
-  versionCode: VERSION_CODE,
-  versionLabel: "NSMQ 2026",
-  currentWindow: "PRE_LONG",
-  countdown: { text: "3 Days", hoursToContest: 72, soon: false, out: false },
-  screeningDue: true,
-  openScreeningId: "mock-screening-id",
-  nextStep: "SCREENING",
-};
+const MOCK_PROFILE = {
+  nickname: "You",
+  fullName: "You",
+  photo: null,
+} as unknown as PatientHome;
+
+// ?mock=1 → a check is due; ?mock=board / board1 / urgent → a result board
+// (board1: fewer than 3 sections, to check the dome row's empty slots);
+// ?mock=empty → nothing due
+function mockRun(mock: string | null): StudentRun | null {
+  if (mock === "board") return MOCK_SUBMITTED_RUN;
+  if (mock === "urgent") return MOCK_URGENT_RUN;
+  if (mock === "board1") {
+    return {
+      ...MOCK_SUBMITTED_RUN,
+      sections: MOCK_SUBMITTED_RUN.sections.slice(0, 1),
+    };
+  }
+  return null;
+}
+
+const pillClass =
+  "px-4 text-xs font-bold tracking-wide text-white/70 uppercase hover:text-white";
 
 export default function HomePage() {
   return (
@@ -70,240 +85,282 @@ function HomePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mock = MOCK_ENABLED ? searchParams.get("mock") : null;
-  const [membership, setMembership] = useState<MembershipResponse | null>(() =>
-    mock
-      ? mock === "empty" || mock === "board" || mock === "board1"
-        ? { ...MOCK_MEMBERSHIP, screeningDue: false }
-        : MOCK_MEMBERSHIP
+  const { showToast } = useToast();
+
+  const [profile, setProfile] = useState<PatientHome | null>(() =>
+    mock ? MOCK_PROFILE : null,
+  );
+  const [status, setStatus] = useState<EnrollmentStatusView | null>(() =>
+    mock && mock !== "empty"
+      ? { ...MOCK_STATUS, due: mock === "1" ? MOCK_STATUS.due : [] }
       : null,
   );
-  // the latest result board - this page IS the day view once a board
-  // exists, not a screen you pass through on the way back from /screening.
-  // ?mock=board previews it directly (?mock=1's screeningDue:true would
-  // otherwise always show the "Take Your Check" CTA ahead of any board).
-  // ?mock=board1 previews a board with fewer than 3 real sections, to
-  // check the dome row's empty-slot padding (see DomeBoard/EmptyDomeSlot).
-  const [board, setBoard] = useState<ScreeningBoard | null>(() =>
-    mock === "board"
-      ? MOCK_SCREENING_BOARD
-      : mock === "board1"
-        ? {
-            ...MOCK_SCREENING_BOARD,
-            sections: MOCK_SCREENING_BOARD.sections?.slice(0, 1),
-          }
-        : null,
+  // the latest submitted run - this page IS the day view once a result
+  // exists, not a screen you pass through on the way back from /screening
+  const [latestRun, setLatestRun] = useState<StudentRun | null>(() =>
+    mockRun(mock),
   );
-  const [profile, setProfile] = useState<HomeProfileResponse | null>(() =>
-    mock ? { nickname: "You" } : null,
-  );
+  const [loading, setLoading] = useState(!mock);
+  const [error, setError] = useState<ApiError | null>(null);
   const [ackLoading, setAckLoading] = useState(false);
   const [retaking, setRetaking] = useState(false);
-  const [loading, setLoading] = useState(!mock);
+  const [assenting, setAssenting] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const { toast, showToast } = useToast();
+  const kickoff = useCountdown(0);
+  const { restart: restartKickoff } = kickoff;
+  // the countdown re-renders every second - keep the domes' input stable
+  const domeSections = useMemo(
+    () => toDomeSections(latestRun?.sections ?? []),
+    [latestRun],
+  );
 
   async function handleLogout() {
     setLoggingOut(true);
-    try {
-      await logout();
-    } catch {
-      // the cookies are HttpOnly - if the clear request itself failed,
-      // there's no client-side fallback to expire them; send the patient
-      // to sign-in anyway, where a still-valid session just resumes normally
-    } finally {
-      try {
-        localStorage.removeItem(ONBOARD_STORAGE_KEY);
-      } catch {
-        // ignore unavailable storage (e.g. private browsing)
-      }
-      router.push("/onboard");
-    }
+    // never throws - local progress is dropped either way
+    await signOutPatient();
+    router.push("/onboard");
   }
+
+  // NSMQ status and runs for the active version. "Which run is due" is
+  // worked out when the status is read, so this re-runs when the page comes
+  // back into view.
+  const loadNsmq = useCallback(async () => {
+    const active = activeEnrollment(await getEnrollments());
+    if (!active) return;
+    if (!active.teamId) {
+      // enrolled but no team yet - /onboard's team picker takes it from here
+      if (active.joinable) {
+        rememberVersionCode(active.versionCode);
+        router.push("/onboard");
+      }
+      return;
+    }
+    const [st, runs] = await Promise.all([
+      getStatus(active.versionCode),
+      getRuns(),
+    ]);
+    setStatus(st);
+    restartKickoff(secondsUntil(st.nextKickoff));
+    setLatestRun(latestSubmittedRun(runs, active.versionCode));
+  }, [router, restartKickoff]);
 
   useEffect(() => {
     if (mock) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await getVersionMembership(VERSION_CODE);
-        if (!cancelled) setMembership(res.data ?? null);
-      } catch (e) {
+        const me = await getProfile();
         if (cancelled) return;
-        // no session at all — this page assumes one, so send them into the
-        // real flow instead of showing an empty shell
-        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        // not onboarded yet - /onboard routes by `next`
+        if (me.next !== "HOME") {
           router.push("/onboard");
           return;
         }
-        // authenticated but nothing to show yet (e.g. no enrolment) — leave
-        // the chrome empty rather than guessing where to send them
+        setProfile(me);
+        await loadNsmq();
+      } catch (e) {
+        if (cancelled) return;
+        // no session at all — this page assumes one
+        if (isSignedOut(e)) {
+          router.push("/onboard");
+          return;
+        }
+        setError(asApiError(e));
       } finally {
         if (!cancelled) setLoading(false);
-      }
-      // 204 (no board yet, or the last run was contest-day and never
-      // produces one) is a normal outcome, not an error - board just stays
-      // null and the plain countdown/CTA view below shows instead
-      try {
-        const boardRes = await getLatestBoard(VERSION_CODE);
-        const liveBoard = boardRes.data ?? null;
-        if (liveBoard) clearCarriedBoard();
-        if (!cancelled) setBoard(liveBoard ?? readCarriedBoard());
-      } catch {
-        // non-fatal - the day view works fine with no board
-        if (!cancelled) setBoard(readCarriedBoard());
-      }
-      try {
-        const profRes = await getHomeProfile();
-        if (!cancelled) setProfile(profRes.data ?? null);
-      } catch {
-        // non-fatal - the logout corner just renders without a name/photo
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [router, mock]);
+  }, [router, mock, loadNsmq]);
+
+  useEffect(() => {
+    if (mock) return;
+    function onVisible() {
+      if (document.visibilityState !== "visible") return;
+      loadNsmq().catch(() => {
+        // keep what's on screen; the next return tries again
+      });
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [mock, loadNsmq]);
+
+  useEffect(() => {
+    if (!mock || !status) return;
+    const raf = requestAnimationFrame(() =>
+      restartKickoff(secondsUntil(status.nextKickoff)),
+    );
+    return () => cancelAnimationFrame(raf);
+  }, [mock, status, restartKickoff]);
 
   async function handleRetake() {
-    if (!board?.screeningId || mock) return;
+    if (!latestRun || mock) return;
     setRetaking(true);
     try {
-      await retakeScreening(board.screeningId);
-      router.push("/screening");
+      const run = await retakeRun(latestRun.id);
+      router.push(`/screening?run=${encodeURIComponent(run.id)}`);
     } catch (e) {
-      if (e instanceof ApiError && e.code === "SCREENING_WINDOW_CLOSED") {
-        showToast("This window has closed — a new check isn't available.");
-      } else if (
-        e instanceof ApiError &&
-        e.code === "SCREENING_NOT_SUBMITTED"
-      ) {
-        // the current attempt is still open rather than submitted - just
-        // go resume it instead of treating this as a failure
-        router.push("/screening");
-      } else {
-        showToast("Something went wrong. Please try again.");
-      }
+      // RUN_CLOSED: the window has passed - its detail says so
+      showToast(asApiError(e).message);
     } finally {
       setRetaking(false);
     }
   }
 
   async function handleCareAck() {
-    if (!board?.screeningId) return;
+    if (!latestRun) return;
+    if (mock) {
+      setLatestRun({ ...latestRun, careAcknowledged: true });
+      return;
+    }
     setAckLoading(true);
     try {
-      await acknowledgeCare(board.screeningId);
-      // takes the board off the page and reveals the day view underneath,
-      // per the product's own rule for this state (§9.2)
-      setBoard(null);
-      clearCarriedBoard();
+      // takes the board off the page and opens the Waiting Room
+      setLatestRun(await acknowledgeCare(latestRun.id));
       showToast("We've opened your day. Come back whenever you're ready.");
-    } catch {
+    } catch (e) {
       // best-effort - if this fails the board just stays up for a retry
-      showToast("Something went wrong. Please try again.");
+      showToast(asApiError(e).message);
     } finally {
       setAckLoading(false);
+    }
+  }
+
+  async function handleAssent() {
+    if (!status) return;
+    setAssenting(true);
+    try {
+      setStatus(await acceptAssent(status.versionCode));
+    } catch (e) {
+      showToast(asApiError(e).message);
+    } finally {
+      setAssenting(false);
+    }
+  }
+
+  function startRun(due: DueRun) {
+    if (!status) return;
+    if (due.runId && due.runStatus === "IN_PROGRESS") {
+      router.push(`/screening?run=${encodeURIComponent(due.runId)}`);
+    } else {
+      router.push(
+        `/screening?v=${encodeURIComponent(status.versionCode)}&kind=${due.kind}`,
+      );
     }
   }
 
   if (loading) {
     return (
       <div className="app-warm-bg text-txt flex min-h-screen items-center justify-center">
-        <div className="border-gold/30 border-t-gold size-10 animate-spin rounded-full border-4" />
+        <Spinner className="text-gold size-10" />
       </div>
     );
   }
 
-  const showBoard = !membership?.screeningDue && !!board?.sections?.length;
+  const openDue = (status?.due ?? []).filter(
+    (d) => d.runStatus !== "SUBMITTED",
+  );
+  const showBoard =
+    !openDue.length && !!latestRun && !latestRun.careAcknowledged;
+  const countdownText =
+    status?.nextKickoff && kickoff.secondsLeft > 0
+      ? formatTimeLeft(kickoff.secondsLeft)
+      : null;
+  // inside the last day before kickoff
+  const soon = kickoff.secondsLeft > 0 && kickoff.secondsLeft < 86400;
+  const campusName = status?.campusName ?? profile?.campus?.fullName ?? null;
+
+  const editButton = profile && !mock && (
+    <Button
+      variant="link"
+      size="sm"
+      onClick={() => setEditOpen(true)}
+      className="text-muted hover:text-txt h-auto px-0 text-xs font-semibold"
+    >
+      Edit profile
+    </Button>
+  );
 
   return (
     <div className="app-warm-bg text-txt flex min-h-screen">
-      <Toast toast={toast} />
-
       <LogoutConfirmModal
         open={confirmOpen}
         loading={loggingOut}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleLogout}
       />
+      {editOpen && profile && (
+        <EditProfileDialog
+          open={editOpen}
+          profile={profile}
+          onOpenChange={setEditOpen}
+          onSaved={(p) => {
+            setProfile(p);
+            showToast("Profile saved.");
+          }}
+        />
+      )}
 
-      {/* left panel - persists across every state of this page, same role
-          as the screening battery's left panel but showing time-to-contest
-          instead of quiz progress, since that's what's relevant here */}
+      {/* left panel - persists across every state of this page, showing
+          time-to-contest */}
       <div className="hidden w-[300px] shrink-0 flex-col justify-between border-r border-white/10 p-8 sm:flex">
         {/* self-start: a flex-col child stretches to fill the cross axis
-            (full container width) by default, which was forcing this box
-            far wider than the logo's real ratio and letting object-fit's
-            default "fill" distort the pixels to match - the wrong width/
-            height props were a red herring, this was the actual cause */}
-        <Image
-          src="/images/logo.webp"
-          alt="JustGo Health"
-          width={384}
-          height={67}
-          className="h-6 w-auto shrink-0 self-start object-contain invert"
+            by default, which distorted the logo */}
+        <Logo
+          variant="light"
+          className="h-6 w-auto shrink-0 self-start object-contain sm:h-6"
         />
 
         <div className="flex flex-col items-center gap-4 text-center">
-          {membership?.countdown?.text && (
+          {countdownText && (
             <div
-              className={`text-3xl font-extrabold ${
-                membership.countdown.soon ? "text-no" : "text-yes"
-              }`}
+              className={`text-3xl font-extrabold ${soon ? "text-no" : "text-yes"}`}
             >
-              {membership.countdown.text}
+              {countdownText}
             </div>
           )}
-          {membership?.campusName && (
-            <div className="flex flex-col items-center gap-2">
-              {membership.campusLogo && (
-                // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
-                <img
-                  src={membership.campusLogo}
-                  alt=""
-                  width={44}
-                  height={44}
-                  className="size-11 rounded-full object-cover"
-                />
-              )}
-              <p className="font-bold">{membership.campusName}</p>
-            </div>
+          {campusName && <p className="font-bold">{campusName}</p>}
+          {profile?.classOf && (
+            <p className="text-muted text-xs">
+              {[profile.classOf, profile.gradeLabel]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
           )}
         </div>
 
         {/* grouped so justify-between above treats these as one bottom
-            cluster (tightly spaced) instead of spreading the profile row
-            away from the logout button it belongs next to */}
+            cluster instead of spreading the profile row away from the
+            logout button it belongs next to */}
         <div className="flex flex-col gap-3">
           {profile?.nickname && (
             <div className="flex items-center gap-2.5">
-              {profile.photoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
-                <img
-                  src={profile.photoUrl}
-                  alt=""
-                  width={32}
-                  height={32}
-                  className="size-8 shrink-0 rounded-full object-cover"
-                />
-              ) : (
-                <div className="border-line flex size-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold uppercase">
-                  {profile.nickname.charAt(0)}
-                </div>
-              )}
-              <p className="truncate text-sm font-bold">{profile.nickname}</p>
+              <Avatar
+                src={profile.photo?.thumbnailUrl}
+                name={profile.fullName || profile.nickname}
+                size="sm"
+                className="border-line text-txt border bg-transparent font-bold"
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">{profile.nickname}</p>
+                {editButton}
+              </div>
             </div>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setConfirmOpen(true)}
             disabled={loggingOut}
-            className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold text-white/70 transition-colors hover:text-white disabled:opacity-60"
+            className="px-4 text-xs font-semibold text-white/70 hover:text-white"
           >
             {loggingOut ? "Logging out…" : "Log out"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -314,46 +371,30 @@ function HomePageInner() {
         }`}
       >
         {/* compact mobile-only header - the left panel above is hidden below
-            sm. Two aligned columns (branding+retake / profile+care) so each
-            action button sits right under what it relates to, instead of
-            floating on its own row with a big gap on either side of it. */}
+            sm. Two aligned columns (team+retake / profile+care) so each
+            action button sits right under what it relates to. */}
         <div className="flex w-full items-start justify-between gap-4 border-b border-white/10 pb-4 sm:hidden">
           <div className="flex flex-col items-start gap-3">
-            <div className="flex items-center gap-3">
-              {membership?.campusLogo && (
-                // eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image
-                <img
-                  src={membership.campusLogo}
-                  alt=""
-                  width={44}
-                  height={44}
-                  className="size-11 rounded-full object-cover"
-                />
-              )}
-              <div className="text-left">
-                <p className="font-bold">
-                  {membership?.campusName ?? "Your team"}
+            <div className="text-left">
+              <p className="font-bold">{campusName ?? "Your team"}</p>
+              {countdownText && (
+                <p
+                  className={`text-xs font-semibold ${soon ? "text-no" : "text-yes"}`}
+                >
+                  {countdownText}
                 </p>
-                {membership?.countdown?.text && (
-                  <p
-                    className={`text-xs font-semibold ${
-                      membership.countdown.soon ? "text-no" : "text-yes"
-                    }`}
-                  >
-                    {membership.countdown.text}
-                  </p>
-                )}
-              </div>
+              )}
             </div>
-            {showBoard && board && (
-              <button
-                type="button"
+            {showBoard && (
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleRetake}
                 disabled={retaking}
-                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide whitespace-nowrap text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
+                className={pillClass}
               >
                 {retaking ? "…" : "↻ Retake Testing"}
-              </button>
+              </Button>
             )}
           </div>
 
@@ -362,71 +403,102 @@ function HomePageInner() {
               {profile?.nickname && (
                 <p className="truncate text-xs font-bold">{profile.nickname}</p>
               )}
-              <button
-                type="button"
+              {editButton}
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setConfirmOpen(true)}
                 disabled={loggingOut}
-                className="border-line hover:border-gold/60 rounded-full border px-4 py-2 text-xs font-semibold whitespace-nowrap text-white/70 transition-colors hover:text-white disabled:opacity-60"
+                className="px-4 text-xs font-semibold text-white/70 hover:text-white"
               >
                 {loggingOut ? "…" : "Log out"}
-              </button>
+              </Button>
             </div>
-            {showBoard && board && (
-              <button
-                type="button"
+            {showBoard && (
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleCareAck}
                 disabled={ackLoading}
-                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide whitespace-nowrap text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
+                className={pillClass}
               >
                 {ackLoading ? "…" : "Get Care ♥"}
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
-        {membership?.screeningDue ? (
-          <button
-            type="button"
-            onClick={() => router.push("/screening")}
-            className="land-cta-btn"
-          >
-            Take Your Check
-          </button>
-        ) : showBoard && board ? (
+        <ApiErrorText error={error} />
+
+        {status?.assentNeeded ? (
+          <div className="flex max-w-xl flex-col items-center gap-4">
+            <p className="text-lg font-bold">
+              The {status.versionLabel} agreement has changed
+            </p>
+            {status.assentText && (
+              <div className="max-h-60 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 px-5 py-4 text-left text-sm leading-relaxed whitespace-pre-line text-white/80">
+                {status.assentText}
+              </div>
+            )}
+            <Button
+              onClick={handleAssent}
+              disabled={assenting}
+              className={ctaButtonClass}
+            >
+              {assenting ? "One sec…" : "I agree"}
+            </Button>
+          </div>
+        ) : openDue.length > 0 ? (
+          <div className="flex flex-col items-center gap-5">
+            {openDue.map((due) => (
+              <div
+                key={due.obligationKey}
+                className="flex flex-col items-center gap-3"
+              >
+                <p className="text-muted text-sm">{KIND_LABEL[due.kind]}</p>
+                <Button
+                  onClick={() => startRun(due)}
+                  className={ctaButtonClass}
+                >
+                  {due.runStatus === "IN_PROGRESS"
+                    ? "Continue Your Check"
+                    : "Take Your Check"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : showBoard && latestRun ? (
           <div className="flex w-full max-w-6xl flex-1 flex-col gap-6">
-            {/* no separate "D-1 / One day before the contest" heading here
-                on purpose - the left panel's countdown is the one timing
-                message on this page now, since board.label/head can be
-                worded inconsistently with it (real example: "Scheduled"
-                vs "One day before the contest" for the same state) */}
             {/* hidden on mobile - those same two buttons already live in the
                 compact header above, grouped under their related column */}
             <div className="hidden items-center justify-between gap-3 sm:flex">
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleRetake}
                 disabled={retaking}
-                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
+                className={pillClass}
               >
                 {retaking ? "…" : "↻ Retake Testing"}
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleCareAck}
                 disabled={ackLoading}
-                className="border-line hover:border-gold/60 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold tracking-wide text-white/70 uppercase transition-colors hover:text-white disabled:opacity-60"
+                className={pillClass}
               >
                 {ackLoading ? "…" : "Get Care ♥"}
-              </button>
+              </Button>
             </div>
 
+            {/* styled by care.urgency only - the triage tag is never shown */}
+            {latestRun.care && <CarePrompt care={latestRun.care} />}
+
             <div className="flex flex-1 items-center justify-center">
-              <DomeBoard
-                sections={board.sections ?? []}
-                onGetCare={handleCareAck}
-                ackLoading={ackLoading}
-                showInlineGetCare={false}
-              />
+              {/* no onGetCare: the header-level Get Care pills above
+                  cover it */}
+              <DomeBoard sections={domeSections} />
             </div>
 
             <p className="text-muted/70 text-xs">
@@ -434,7 +506,14 @@ function HomePageInner() {
             </p>
           </div>
         ) : (
-          <p className="text-muted">Nothing due right now — check back soon.</p>
+          <div className="flex w-full flex-col items-center gap-6">
+            <p className="text-muted">
+              Nothing due right now — check back soon.
+            </p>
+            {latestRun?.careAcknowledged && !mock && (
+              <WaitingRoom runId={latestRun.id} />
+            )}
+          </div>
         )}
       </div>
     </div>

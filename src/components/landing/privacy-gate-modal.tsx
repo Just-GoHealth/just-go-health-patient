@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { AnimatePresence, motion } from "motion/react";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  Logo,
+} from "@just-gohealth/ui";
 
 const SECTIONS = [
   {
@@ -28,86 +35,72 @@ export function PrivacyGateModal({
   onContinue: () => void;
 }) {
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) onClose();
-          }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent
+        surface="light"
+        hideClose
+        aria-describedby={undefined}
+        className="flex max-h-[92vh] flex-row gap-0 overflow-hidden rounded-3xl bg-white p-0 shadow-2xl sm:max-h-[92vh] sm:max-w-4xl sm:rounded-3xl sm:p-0"
+      >
+        <DialogClose
+          aria-label="Close"
+          className="absolute top-4 right-4 z-10 flex size-8 items-center justify-center rounded-full border border-black/10 text-black/50 transition-colors hover:bg-black/5"
         >
-          <motion.div
-            className="relative flex max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-3xl bg-white text-[#1a100c] shadow-2xl"
-            initial={{ opacity: 0, scale: 0.96, y: 24 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 24 }}
-            transition={{ duration: 0.4, ease: [0.2, 0.85, 0.3, 1.05] }}
+          ✕
+        </DialogClose>
+
+        <div className="min-w-0 flex-1 overflow-y-auto p-6 sm:p-9">
+          <div className="mb-4">
+            <Logo
+              variant="dark"
+              className="h-6 w-auto shrink-0 self-start object-contain sm:h-6"
+            />
+          </div>
+
+          <DialogTitle asChild>
+            <h1 className="text-2xl leading-normal font-extrabold tracking-tight sm:text-3xl">
+              Your Privacy Comes <span className="text-[#8f6716]">First</span>
+            </h1>
+          </DialogTitle>
+          <div className="mt-3 h-px w-16 bg-gradient-to-r from-[#e8d4ad] to-[#b8862e]" />
+
+          <div className="mt-3 flex flex-col divide-y divide-black/10">
+            {SECTIONS.map((s) => (
+              <div key={s.label} className="py-2.5 text-center first:pt-0">
+                <div className="text-xs font-bold tracking-[0.2em] text-[#8f6716] uppercase">
+                  {s.label}
+                </div>
+                <p className="mt-1.5 text-sm leading-snug text-black/70">
+                  {s.body}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <Button
+            size="lg"
+            onClick={onContinue}
+            className="mx-auto mt-5 flex bg-[#4a201c] px-6 font-semibold text-[#f6e7c4] hover:bg-[#5a2c26]"
           >
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="absolute top-4 right-4 z-10 flex size-8 items-center justify-center rounded-full border border-black/10 text-black/50 transition-colors hover:bg-black/5"
-            >
-              ✕
-            </button>
+            Okay, let&apos;s go 🚀
+          </Button>
+        </div>
 
-            <div className="min-w-0 flex-1 overflow-y-auto p-6 sm:p-9">
-              <div className="mb-4">
-                <Image
-                  src="/images/logo.webp"
-                  alt="JustGo Health"
-                  width={384}
-                  height={67}
-                  className="h-6 w-auto shrink-0 self-start object-contain"
-                />
-              </div>
-
-              <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
-                Your Privacy Comes <span className="text-[#8f6716]">First</span>
-              </h1>
-              <div className="mt-3 h-px w-16 bg-gradient-to-r from-[#e8d4ad] to-[#b8862e]" />
-
-              <div className="mt-3 flex flex-col divide-y divide-black/10">
-                {SECTIONS.map((s) => (
-                  <div key={s.label} className="py-2.5 text-center first:pt-0">
-                    <div className="text-xs font-bold tracking-[0.2em] text-[#8f6716] uppercase">
-                      {s.label}
-                    </div>
-                    <p className="mt-1.5 text-sm leading-snug text-black/70">
-                      {s.body}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                type="button"
-                onClick={onContinue}
-                className="mx-auto mt-5 flex items-center gap-2 rounded-full bg-[#4a201c] px-6 py-3 font-semibold text-[#f6e7c4] transition-colors hover:bg-[#5a2c26]"
-              >
-                Okay, let&apos;s go 🚀
-              </button>
-            </div>
-
-            <div className="hidden w-[36%] shrink-0 items-end justify-center overflow-hidden bg-gradient-to-b from-[#fdfbf6] to-[#f7f1e6] p-4 sm:flex">
-              <Image
-                src="/images/access-code-illustration.webp"
-                alt=""
-                width={280}
-                height={400}
-                className="h-full w-full object-contain object-bottom"
-              />
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        <div className="hidden w-[36%] shrink-0 items-end justify-center overflow-hidden bg-gradient-to-b from-[#fdfbf6] to-[#f7f1e6] p-4 sm:flex">
+          <Image
+            src="/images/access-code-illustration.webp"
+            alt=""
+            width={280}
+            height={400}
+            className="h-full w-full object-contain object-bottom"
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -91,7 +91,8 @@
   align-items: center;
   gap: 10px;
 }
-.ps-batt {
+/* the shared <BatteryMeter>'s svg - same glow as the old inline battery */
+.ps-batt-wrap svg {
   animation: battGlow 2.6s ease-in-out infinite;
 }
 @keyframes battGlow {
@@ -102,22 +103,6 @@
   50% {
     filter: drop-shadow(0 6px 26px rgba(43, 182, 115, 0.7));
   }
-}
-.ps-batt-pct {
-  font-family: "Space Mono", monospace, var(--font);
-  font-weight: 800;
-  font-size: clamp(29.9px, 3.91vh, 39.1px);
-  color: #fff;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
-  line-height: 1;
-}
-.ps-batt-label {
-  font-weight: 800;
-  font-size: 14.95px;
-  letter-spacing: 0.14em;
-  color: var(--color-gold);
-  text-transform: uppercase;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
 }
 .ps-batt-delta {
   position: absolute;

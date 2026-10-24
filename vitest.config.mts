@@ -12,7 +12,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text-summary", "html", "lcov"],
       reportsDirectory: "coverage",
-      include: ["src/lib/**/*.ts", "src/app/api/**/*.ts"],
+      include: ["src/lib/**/*.ts"],
       exclude: ["src/**/*.test.{ts,tsx}"],
       // Baseline gate (item 10): raise these as coverage grows; never lower.
       thresholds: {

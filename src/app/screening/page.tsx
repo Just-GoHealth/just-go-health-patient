@@ -3,124 +3,80 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import "./screening.css";
-import { DomeBoard } from "@/components/screening/dome-board";
+import {
+  BatteryMeter,
+  Button,
+  DomeBoard,
+  batteryColor,
+  useCountdown,
+} from "@just-gohealth/ui";
+import { CarePrompt } from "@/components/nsmq/care-prompt";
+import { ctaButtonClass } from "@/components/shared/cta";
 import { LogoutConfirmModal } from "@/components/shared/logout-confirm-modal";
-import { Toast, useToast } from "@/components/shared/toast";
-import { CARRIED_BOARD_KEY, ONBOARD_STORAGE_KEY } from "@/lib/constants";
+import { useToast } from "@/components/shared/toast";
+import { signOutPatient } from "@/lib/sign-out";
+import { toDomeSections } from "@/lib/v2/dome";
+import { asApiError, isSignedOut } from "@/lib/v2/errors";
+import { formatTimeLeft, secondsUntil } from "@/lib/v2/labels";
 import {
-  ApiError,
-  acknowledgeCare,
-  answerScreeningItem,
-  getHomeProfile,
-  getLatestBoard,
-  getVersionMembership,
-  logout,
-  startOrResumeScreening,
-  submitScreening,
-  type HomeProfileResponse,
-  type MembershipResponse,
-  type ScreeningBoard,
-  type ScreeningItem,
-  type ScreeningRun,
-} from "@/lib/api";
-import {
-  MOCK_SCREENING_BOARD,
-  MOCK_SCREENING_BOARD_EMERGENCY,
-  MOCK_SCREENING_RUN,
-} from "./dev-mock";
-
-// exact thresholds/copy from the legacy scrWord()/scrApply() — the battery
-// here tracks how far through the check they are, not an "energy" stat
-function scrWord(v: number): string {
-  if (v >= 100) return "Proud Of You";
-  if (v >= 90) return "Last One";
-  if (v >= 75) return "Almost There";
-  if (v >= 55) return "This Is Care";
-  if (v >= 40) return "Halfway There";
-  if (v >= 20) return "Keep Going";
-  if (v > 0) return "Good Start";
-  return "Start Strong";
-}
-function scrColor(v: number): string {
-  if (v >= 70) return "#2bb673";
-  if (v >= 35) return "#e8d4ad";
-  return "#ed4b58";
-}
+  answer,
+  getEnrollments,
+  getRun,
+  startRun,
+  submitRun,
+} from "@/lib/v2/nsmq";
+import { getProfile } from "@/lib/v2/patient";
+import { activeEnrollment, firstUnansweredIndex } from "@/lib/v2/runs";
+import type {
+  InstrumentItem,
+  NsmqKind,
+  PatientHome,
+  StudentRun,
+} from "@/lib/v2/types";
+import { MOCK_RUN, MOCK_SUBMITTED_RUN, MOCK_URGENT_RUN } from "./dev-mock";
 
 // dev-only shortcut so the UI can be reviewed without spending a real test
 // account on every pass — never active in a production build regardless of
 // the query string
 const MOCK_ENABLED = process.env.NODE_ENV !== "production";
 
-const VERSION_CODE = "nsmq2026";
 const VERSION_LABEL = "NSMQ 2026";
 const LOADING_MIN_MS = 2400;
+const KINDS: NsmqKind[] = ["D1", "T3", "TPLUS"];
 
 // the left profile panel — persists across the loading and battery phases
 // (not the board, which is a separate full-width layout in the mock)
 function LeftPanel({
   profile,
-  membership,
   pct,
   onLogoutClick,
 }: {
-  profile: HomeProfileResponse | null;
-  membership: MembershipResponse | null;
+  profile: PatientHome | null;
   pct: number;
   onLogoutClick: () => void;
 }) {
+  const photoUrl = profile?.photo?.url;
   return (
     <div
       className="wu-left"
       style={
-        profile?.photoUrl
+        photoUrl
           ? {
-              backgroundImage: `linear-gradient(180deg, rgba(10,10,12,.28) 0%, rgba(10,10,12,.55) 55%, rgba(10,10,12,.82) 100%), url('${profile.photoUrl}')`,
+              backgroundImage: `linear-gradient(180deg, rgba(10,10,12,.28) 0%, rgba(10,10,12,.55) 55%, rgba(10,10,12,.82) 100%), url('${photoUrl}')`,
             }
           : undefined
       }
     >
       {profile?.nickname && <div className="ps-name">{profile.nickname}</div>}
 
-      <div className="ps-batt-wrap">
-        <svg className="ps-batt" width="150" height="74" viewBox="0 0 150 74">
-          <rect
-            x="3"
-            y="8"
-            width="128"
-            height="58"
-            rx="14"
-            fill="rgba(0,0,0,.35)"
-            stroke="#fff"
-            strokeWidth="3"
-          />
-          <rect x="134" y="26" width="11" height="22" rx="4" fill="#fff" />
-          <rect
-            x="10"
-            y="15"
-            width={Math.round(111 * (pct / 100))}
-            height="44"
-            rx="8"
-            fill={scrColor(pct)}
-            style={{
-              transition:
-                "width .55s cubic-bezier(.34,1.56,.64,1), fill .45s ease",
-            }}
-          />
-        </svg>
-        <div className="ps-batt-pct">{pct}%</div>
-        <div className="ps-batt-label">{scrWord(pct)}</div>
-      </div>
+      {/* the battery tracks how far through the check they are, not an
+          "energy" stat - copy/colour thresholds live in the shared
+          batteryWord/batteryColor */}
+      <BatteryMeter percent={pct} size="lg" className="ps-batt-wrap" />
 
-      {membership?.campusName && (
+      {profile?.campus && (
         <div className="ps-school">
-          {membership.campusLogo && (
-            <div className="ps-logo">
-              {/* eslint-disable-next-line @next/next/no-img-element -- unknown, runtime-supplied host; can't be allowlisted for next/image */}
-              <img src={membership.campusLogo} alt="" />
-            </div>
-          )}
-          <div className="s-name">{membership.campusName}</div>
+          <div className="s-name">{profile.campus.fullName}</div>
         </div>
       )}
 
@@ -136,34 +92,19 @@ function LeftPanel({
   );
 }
 
-// which item to land on when a run is resumed: the first one without an
-// answer, never skipping past a gap
-function firstUnanswered(items: ScreeningItem[]): number {
-  for (let i = 0; i < items.length; i++) {
-    if (items[i].answeredIndex == null) return i;
-  }
-  return items.length - 1;
-}
-
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function stashCarriedBoard(board: ScreeningBoard | undefined) {
-  if (!board) return;
-  try {
-    sessionStorage.setItem(CARRIED_BOARD_KEY, JSON.stringify(board));
-  } catch {
-    // ignore unavailable storage - /home just falls back to "nothing due"
-  }
+function sortedItems(run: StudentRun | null): InstrumentItem[] {
+  return [...(run?.questionnaire?.items ?? [])].sort(
+    (a, b) => a.position - b.position,
+  );
 }
 
-function clearCarriedBoard() {
-  try {
-    sessionStorage.removeItem(CARRIED_BOARD_KEY);
-  } catch {
-    // ignore unavailable storage
-  }
+// itemCode → optionId, restored from the run's saved `answers`
+function answerMap(run: StudentRun): Record<string, string> {
+  return Object.fromEntries(run.answers.map((a) => [a.itemCode, a.optionId]));
 }
 
 export default function ScreeningPage() {
@@ -178,32 +119,38 @@ function ScreeningPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mock = MOCK_ENABLED ? searchParams.get("mock") : null;
+  const runIdParam = searchParams.get("run");
+  const versionParam = searchParams.get("v");
+  const kindParam = searchParams.get("kind");
   const [phase, setPhase] = useState<"loading" | "battery" | "board" | "error">(
     "loading",
   );
   const [errorMessage, setErrorMessage] = useState("");
-  const [run, setRun] = useState<ScreeningRun | null>(null);
-  const [answers, setAnswers] = useState<(number | null)[]>([]);
+  const [run, setRun] = useState<StudentRun | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [index, setIndex] = useState(0);
   const [furthest, setFurthest] = useState(0);
   const [huhOn, setHuhOn] = useState(false);
   const [qflip, setQflip] = useState(false);
   const [answering, setAnswering] = useState(false);
-  const [board, setBoard] = useState<ScreeningBoard | null>(null);
-  const [ackLoading, setAckLoading] = useState(false);
-  const [careAcked, setCareAcked] = useState(false);
-  const { toast, showToast } = useToast();
+  const [board, setBoard] = useState<StudentRun | null>(null);
+  const { showToast } = useToast();
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(
     null,
   );
-  const [profile, setProfile] = useState<HomeProfileResponse | null>(() =>
-    mock ? { nickname: "You" } : null,
-  );
-  const [membership, setMembership] = useState<MembershipResponse | null>(() =>
-    mock ? { campusName: "Your School" } : null,
+  const [profile, setProfile] = useState<PatientHome | null>(() =>
+    mock
+      ? ({
+          nickname: "You",
+          campus: { fullName: "Your School" },
+        } as unknown as PatientHome)
+      : null,
   );
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  // time left in this run's window (T+ has no closesAt)
+  const closes = useCountdown(0);
+  const { restart: restartCloses } = closes;
 
   const focusRef = useRef<HTMLDivElement | null>(null);
   const stripRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -212,19 +159,13 @@ function ScreeningPageInner() {
   useEffect(() => {
     if (mock) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const [profRes, memRes] = await Promise.all([
-          getHomeProfile(),
-          getVersionMembership(VERSION_CODE),
-        ]);
-        if (cancelled) return;
-        setProfile(profRes.data ?? null);
-        setMembership(memRes.data ?? null);
-      } catch {
-        // non-fatal — the left panel just renders without a name/crest
-      }
-    })();
+    getProfile()
+      .then((p) => {
+        if (!cancelled) setProfile(p);
+      })
+      .catch(() => {
+        // non-fatal — the left panel just renders without a name/school
+      });
     return () => {
       cancelled = true;
     };
@@ -232,19 +173,14 @@ function ScreeningPageInner() {
 
   async function handleLogout() {
     setLoggingOut(true);
-    try {
-      await logout();
-    } catch {
-      // cookies are HttpOnly — nothing client-side to fall back to if the
-      // clear request itself failed; move on and let sign-in resolve it
-    } finally {
-      try {
-        localStorage.removeItem(ONBOARD_STORAGE_KEY);
-      } catch {
-        // ignore unavailable storage
-      }
-      router.push("/onboard");
-    }
+    await signOutPatient();
+    router.push("/onboard");
+  }
+
+  // a fully answered or already submitted run belongs on /home's board
+  async function finishRun(r: StudentRun) {
+    if (r.status === "IN_PROGRESS") await submitRun(r.id);
+    router.push("/home");
   }
 
   useEffect(() => {
@@ -254,92 +190,88 @@ function ScreeningPageInner() {
         if (mock) {
           await wait(LOADING_MIN_MS);
           if (cancelled) return;
-          const data = MOCK_SCREENING_RUN;
-          setRun(data);
-          const initialAnswers = (data.items ?? []).map(
-            (it) => it.answeredIndex ?? null,
-          );
-          setAnswers(initialAnswers);
+          setRun(MOCK_RUN);
+          setAnswers({});
           setIndex(0);
           setFurthest(0);
+          restartCloses(secondsUntil(MOCK_RUN.closesAt));
           setPhase("battery");
           return;
         }
-        const [res] = await Promise.all([
-          startOrResumeScreening(VERSION_CODE),
-          wait(LOADING_MIN_MS),
-        ]);
+        const load = async (): Promise<StudentRun> => {
+          if (runIdParam) return getRun(runIdParam);
+          const versionCode =
+            versionParam ??
+            activeEnrollment(await getEnrollments())?.versionCode;
+          if (!versionCode) throw new Error("No NSMQ version to check in for");
+          const kind = KINDS.find((k) => k === kindParam);
+          // starts the run due now, or returns the one already started
+          return startRun(versionCode, kind);
+        };
+        const [data] = await Promise.all([load(), wait(LOADING_MIN_MS)]);
         if (cancelled) return;
-        const data = res.data;
-        const items = data?.items ?? [];
-        if (!data?.screeningId || !items.length) {
+        if (data.status === "SUBMITTED") {
+          router.push("/home");
+          return;
+        }
+        if (data.status === "EXPIRED") {
+          setPhase("error");
+          setErrorMessage(
+            "This check's window has closed — no new answers can be saved.",
+          );
+          return;
+        }
+        const items = sortedItems(data);
+        if (!items.length) {
           setPhase("error");
           setErrorMessage("This check couldn't be opened. Please try again.");
           return;
         }
+        const saved = answerMap(data);
         // resuming a run that's already fully answered (e.g. the tab was
-        // refreshed right after the last answer, before this page ever saw
-        // the "complete" response) — submit is idempotent, so finish it out
-        // and go straight to the board instead of re-showing the last
-        // question with its answer already selected
-        if (items.every((it) => it.answeredIndex != null)) {
-          const boardRes = await submitScreening(data.screeningId);
-          if (cancelled) return;
-          // the check is already done - land on /home (which reads this
-          // stashed board) instead of re-showing results on this page
-          stashCarriedBoard(boardRes.data);
+        // refreshed right after the last answer) — finish it out and go
+        // straight to the board instead of re-showing the last question
+        if (items.every((it) => saved[it.code])) {
+          await submitRun(data.id);
           router.push("/home");
           return;
         }
         setRun(data);
-        const initialAnswers = items.map((it) => it.answeredIndex ?? null);
-        setAnswers(initialAnswers);
-        const start = firstUnanswered(items);
+        setAnswers(saved);
+        const start = firstUnansweredIndex(
+          items.map((it) => it.code),
+          new Set(Object.keys(saved)),
+        );
         setIndex(start);
         setFurthest(start);
+        restartCloses(secondsUntil(data.closesAt));
         setPhase("battery");
       } catch (e) {
         if (cancelled) return;
-        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        if (isSignedOut(e)) {
           router.push("/onboard");
           return;
         }
-        // the backend may refuse to (re)open a screening that's already
-        // been submitted for this window, rather than just returning it
-        // fully-answered — if a real scored board exists, show that
-        // instead of a dead-end error
-        try {
-          const boardRes = await getLatestBoard(VERSION_CODE);
-          if (cancelled) return;
-          if (boardRes.data) {
-            stashCarriedBoard(boardRes.data);
-            router.push("/home");
-            return;
-          }
-        } catch {
-          // no board either — fall through to the real error below
-        }
+        // NOTHING_DUE, NOT_ON_TEAM, ASSENT_REQUIRED… - the detail says why
         setPhase("error");
-        setErrorMessage(
-          e instanceof ApiError && e.code === "VERSION_PERIOD_CLOSED"
-            ? "This season has closed — no new checks can be started."
-            : e instanceof ApiError
-              ? e.message
-              : "Something went wrong opening your check.",
-        );
+        setErrorMessage(asApiError(e).message);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [router, mock]);
+  }, [router, mock, runIdParam, versionParam, kindParam, restartCloses]);
 
-  const items = useMemo(() => run?.items ?? [], [run]);
-  const current = items[index];
-  const answeredCount = useMemo(
-    () => answers.filter((a) => a != null).length,
-    [answers],
+  const items = useMemo(() => sortedItems(run), [run]);
+  const sectionTitles = useMemo(
+    () =>
+      Object.fromEntries(
+        (run?.questionnaire?.sections ?? []).map((s) => [s.code, s.title]),
+      ),
+    [run],
   );
+  const current = items[index];
+  const answeredCount = items.filter((it) => answers[it.code]).length;
   const battPct = items.length
     ? Math.round((answeredCount / items.length) * 100)
     : 0;
@@ -353,7 +285,7 @@ function ScreeningPageInner() {
   }, [index]);
 
   function toggleHuh() {
-    if (!current?.help) return;
+    if (!current?.helpText) return;
     setHuhOn((v) => !v);
     setQflip(true);
     setTimeout(() => setQflip(false), 460);
@@ -390,59 +322,87 @@ function ScreeningPageInner() {
     setTimeout(() => fly.remove(), 560);
   }
 
+  function moveOn(nextAnswers: Record<string, string>, from: number) {
+    // the next unanswered item, never skipping past a gap
+    const gap = items.findIndex((it, i) => i <= from && !nextAnswers[it.code]);
+    const next = gap !== -1 ? gap : Math.min(from + 1, items.length - 1);
+    setIndex(next);
+    setFurthest((f) => Math.max(f, next));
+    setHuhOn(false);
+  }
+
   async function pick(
-    optionIndex: number,
+    optionId: string,
     e: React.MouseEvent<HTMLButtonElement>,
   ) {
-    if (!run?.screeningId || !current?.itemCode || answering) return;
+    if (!run || !current || answering) return;
     setAnswering(true);
     const idx = index;
-    const emoji = current.options?.[optionIndex]?.emoji ?? "";
-    const nextAnswers = [...answers];
-    nextAnswers[idx] = optionIndex;
+    const itemCode = current.code;
+    const previous = answers;
+    const emoji = current.options.find((o) => o.id === optionId)?.emoji ?? "";
+    const nextAnswers = { ...answers, [itemCode]: optionId };
     setAnswers(nextAnswers);
     setTip(null);
     if (emoji) flyEmoji(e.currentTarget, emoji, idx);
 
-    const isLast = nextAnswers.every((a) => a != null);
+    const isLast = items.every((it) => nextAnswers[it.code]);
 
     try {
-      if (!mock) {
-        const res = await answerScreeningItem(
-          run.screeningId,
-          current.itemCode,
-          optionIndex,
-        );
-        if (res.data?.complete) {
-          const boardRes = await submitScreening(run.screeningId);
-          stashCarriedBoard(boardRes.data);
-          router.push("/home");
+      if (mock) {
+        if (isLast) {
+          setBoard(mock === "urgent" ? MOCK_URGENT_RUN : MOCK_SUBMITTED_RUN);
+          setPhase("board");
           return;
         }
-      } else if (isLast) {
-        setBoard(
-          mock === "emergency"
-            ? MOCK_SCREENING_BOARD_EMERGENCY
-            : MOCK_SCREENING_BOARD,
-        );
-        setPhase("board");
+        moveOn(nextAnswers, idx);
         return;
       }
-
-      let next = idx + 1;
-      for (let i = 0; i < next; i++) {
-        if (nextAnswers[i] == null) {
-          next = i;
-          break;
-        }
+      // saved as it's picked; the answer list comes back with the run
+      const saved = await answer(run.id, itemCode, optionId);
+      const savedAnswers = answerMap(saved);
+      setAnswers(savedAnswers);
+      if (items.every((it) => savedAnswers[it.code])) {
+        await finishRun(saved);
+        return;
       }
-      setIndex(next);
-      setFurthest((f) => Math.max(f, next));
-      setHuhOn(false);
-    } catch {
-      // the answer stays selected locally — the strip already shows it as
-      // answered, so let the student continue rather than blocking on a
-      // single dropped save
+      moveOn(savedAnswers, idx);
+    } catch (err) {
+      const error = asApiError(err);
+      if (isSignedOut(error)) {
+        router.push("/onboard");
+        return;
+      }
+      if (error.code === "RUN_SUBMITTED") {
+        router.push("/home");
+        return;
+      }
+      if (error.code === "RUN_CLOSED") {
+        setPhase("error");
+        setErrorMessage(error.message);
+        return;
+      }
+      if (error.code === "ANSWERS_MISSING") {
+        // the submit found a gap - reload the saved answers and go to it
+        try {
+          const fresh = await getRun(run.id);
+          const freshAnswers = answerMap(fresh);
+          setAnswers(freshAnswers);
+          const gap = firstUnansweredIndex(
+            items.map((it) => it.code),
+            new Set(Object.keys(freshAnswers)),
+          );
+          setIndex(gap);
+          setFurthest((f) => Math.max(f, gap));
+        } catch {
+          // keep what's on screen
+        }
+        showToast(error.message);
+        return;
+      }
+      // the answer wasn't saved - put the strip back as it was
+      setAnswers(previous);
+      showToast(error.message);
     } finally {
       setAnswering(false);
     }
@@ -454,32 +414,11 @@ function ScreeningPageInner() {
     setHuhOn(false);
   }
 
-  async function handleCareAck() {
-    if (!board?.screeningId) return;
-    setAckLoading(true);
-    try {
-      await acknowledgeCare(board.screeningId);
-      // Get Care steps the board aside in place - it's not a navigation
-      // action. Leaving here (to /home) is a separate, explicit choice via
-      // "Continue" below.
-      setCareAcked(true);
-      // the day's been opened - /home should show its normal empty/day
-      // view next, not resurrect this board from the carry-over
-      clearCarriedBoard();
-      showToast("We've opened your day. Come back whenever you're ready.");
-    } catch {
-      showToast("Something went wrong. Please try again.");
-    } finally {
-      setAckLoading(false);
-    }
-  }
-
   if (phase === "loading") {
     return (
       <div className="wu-shell">
         <LeftPanel
           profile={profile}
-          membership={membership}
           pct={0}
           onLogoutClick={() => setLogoutConfirmOpen(true)}
         />
@@ -533,92 +472,75 @@ function ScreeningPageInner() {
       <div className="mh-screen items-center justify-center px-6 text-center">
         <div>
           <p className="text-no font-semibold">{errorMessage}</p>
-          <button
-            type="button"
+          <Button
+            variant="link"
             onClick={() => router.push("/home")}
-            className="text-muted mt-4 underline"
+            className="text-muted mt-4 h-auto px-0 text-base font-normal underline"
           >
             Back home
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
+  // dev mock only: real submits land on /home's board
   if (phase === "board" && board) {
     return (
       <div className="board-screen">
-        <Toast toast={toast} />
         <div className="board-head">
-          <p className="board-eyebrow">{board.label}</p>
-          <h1 className="board-title">{board.head}</h1>
+          <p className="board-eyebrow">D-1</p>
+          <h1 className="board-title">One day before the contest</h1>
         </div>
-
-        {careAcked ? (
-          <div className="mx-auto flex max-w-[640px] flex-col items-center text-center">
-            <p className="text-txt text-lg font-bold">You&apos;re all set.</p>
-            <p className="text-muted mt-1 text-sm">
-              We&apos;ve opened your day — come back whenever you&apos;re ready.
-            </p>
-            <button
-              type="button"
-              onClick={() => router.push("/home")}
-              className="land-cta-btn board-continue-btn mt-6"
-            >
-              Go to home
-            </button>
-          </div>
-        ) : (
-          <>
-            <DomeBoard
-              sections={board.sections ?? []}
-              onGetCare={handleCareAck}
-              ackLoading={ackLoading}
-            />
-
-            {!board.emergency && (
-              <button
-                type="button"
-                onClick={() => router.push("/home")}
-                className="land-cta-btn board-continue-btn"
-              >
-                Continue
-              </button>
-            )}
-          </>
-        )}
+        {board.care && <CarePrompt care={board.care} className="mb-6" />}
+        <DomeBoard
+          sections={toDomeSections(board.sections, {
+            questionnaire: MOCK_RUN.questionnaire,
+            answers: board.answers,
+          })}
+        />
+        <Button
+          onClick={() => router.push("/home?mock=board")}
+          className={`${ctaButtonClass} board-continue-btn`}
+        >
+          Continue
+        </Button>
       </div>
     );
   }
 
   if (!current) return null;
 
+  const closesText =
+    run?.closesAt && closes.secondsLeft > 0
+      ? `Closes in ${formatTimeLeft(closes.secondsLeft)}`
+      : null;
+
   return (
     <div className="wu-shell">
       <LeftPanel
         profile={profile}
-        membership={membership}
         pct={battPct}
         onLogoutClick={() => setLogoutConfirmOpen(true)}
       />
       <div className="mh-screen">
         <div className="mh-focus" ref={focusRef}>
           <div className="f-kick">
-            <span className="f-sec">{current.section ?? "Mental Health"}</span>
+            <span className="f-sec">
+              {sectionTitles[current.sectionCode] ?? "Mental Health"}
+            </span>
           </div>
 
-          {/* the contest countdown - shown here regardless of whether this is
-            the student's first check or a retake, same data as the home
-            page's countdown pill */}
-          {membership?.countdown?.text && (
+          {/* time left in this run's window */}
+          {closesText && (
             <div className="f-when">
-              <span className="f-when-pill">{membership.countdown.text}</span>
+              <span className="f-when-pill">{closesText}</span>
             </div>
           )}
 
           <div className="f-title">
-            {current.shortName ?? current.name}
-            {current.help && (
+            {current.name ?? current.code}
+            {current.helpText && (
               <button
                 type="button"
                 className={`huh-btn${huhOn ? "okay" : ""}`}
@@ -630,28 +552,32 @@ function ScreeningPageInner() {
           </div>
 
           <div className={`f-q${huhOn ? "is-huh" : ""}${qflip ? "qflip" : ""}`}>
-            {huhOn ? current.help : current.question}
+            {huhOn ? current.helpText : current.prompt}
           </div>
 
           <div className="mh-opts">
-            {(current.options ?? []).map((opt, oi) => (
-              <button
-                key={oi}
-                type="button"
-                disabled={answering}
-                className={`mh-opt${answers[index] === (opt.index ?? oi) ? "sel" : ""}`}
-                onClick={(e) => pick(opt.index ?? oi, e)}
-                onMouseEnter={(e) =>
-                  opt.sub && showTip(e.currentTarget, opt.sub)
-                }
-                onMouseLeave={() => setTip(null)}
-                onFocus={(e) => opt.sub && showTip(e.currentTarget, opt.sub)}
-                onBlur={() => setTip(null)}
-              >
-                <span className="em">{opt.emoji}</span>
-                <span>{opt.label}</span>
-              </button>
-            ))}
+            {[...current.options]
+              .sort((a, b) => a.position - b.position)
+              .map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  disabled={answering}
+                  className={`mh-opt${answers[current.code] === opt.id ? "sel" : ""}`}
+                  onClick={(e) => pick(opt.id, e)}
+                  onMouseEnter={(e) =>
+                    opt.description && showTip(e.currentTarget, opt.description)
+                  }
+                  onMouseLeave={() => setTip(null)}
+                  onFocus={(e) =>
+                    opt.description && showTip(e.currentTarget, opt.description)
+                  }
+                  onBlur={() => setTip(null)}
+                >
+                  <span className="em">{opt.emoji}</span>
+                  <span>{opt.label}</span>
+                </button>
+              ))}
           </div>
 
           {tip && (
@@ -699,7 +625,7 @@ function ScreeningPageInner() {
                   width={Math.round(111 * (battPct / 100))}
                   height="44"
                   rx="8"
-                  fill={scrColor(battPct)}
+                  fill={batteryColor(battPct)}
                   style={{
                     transition:
                       "width .55s cubic-bezier(.34,1.56,.64,1), fill .45s ease",
@@ -711,27 +637,27 @@ function ScreeningPageInner() {
           </div>
           <div className="mh-strip">
             {items.map((it, i) => {
-              const answered = answers[i] != null;
+              const picked = answers[it.code];
               const isActive = i === index;
-              const emoji = answered
-                ? (it.options?.[answers[i] as number]?.emoji ?? "•")
+              const emoji = picked
+                ? (it.options.find((o) => o.id === picked)?.emoji ?? "•")
                 : isActive
                   ? "◆"
                   : "•";
               return (
                 <button
-                  key={it.itemCode ?? i}
+                  key={it.code}
                   type="button"
                   ref={(el) => {
                     stripRefs.current[i] = el;
                     if (isActive) activeItemRef.current = el;
                   }}
                   disabled={i > furthest}
-                  className={`mh-item ${isActive ? "active" : answered ? "done" : "pending"}`}
+                  className={`mh-item ${isActive ? "active" : picked ? "done" : "pending"}`}
                   onClick={() => goto(i)}
                 >
                   <span className="ring">{emoji}</span>
-                  <span className="nm">{it.shortName ?? it.name}</span>
+                  <span className="nm">{it.name ?? it.code}</span>
                 </button>
               );
             })}
