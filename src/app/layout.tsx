@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk } from "next/font/google";
 import { Toaster } from "@just-gohealth/ui";
 import "./globals.css";
+import { ApiMocking } from "@/components/shared/api-mocking";
 import { ReferralCapture } from "@/components/shared/referral-capture";
 import { SessionConfig } from "@/components/shared/session-config";
 
@@ -22,10 +23,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`dark ${spaceGrotesk.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col font-sans">
-        <ReferralCapture />
-        <SessionConfig />
-        {children}
-        <Toaster />
+        <ApiMocking>
+          <ReferralCapture />
+          <SessionConfig />
+          {children}
+          <Toaster />
+        </ApiMocking>
       </body>
     </html>
   );
