@@ -24,6 +24,7 @@ import {
   type PasswordRule,
 } from "@just-gohealth/ui";
 import { CodeGateModal } from "@/components/onboard/code-gate-modal";
+import { GhanaFlag } from "@/components/onboard/ghana-flag";
 import { PhotoTestimonialPanel } from "@/components/onboard/photo-testimonial-panel";
 import { ApiErrorText } from "@/components/shared/api-error-text";
 import { useToast } from "@/components/shared/toast";
@@ -230,6 +231,11 @@ const inputClass = "rounded-xl text-txt placeholder:text-muted";
 // the 6-box code row, sized like the old hand-rolled boxes
 const otpClass =
   "mx-auto mt-6 max-w-none justify-center gap-[1.5vw] sm:gap-2 [&_input]:aspect-[4/5] [&_input]:w-[clamp(32px,11vw,44px)] [&_input]:max-w-none [&_input]:flex-none [&_input]:rounded-xl [&_input]:font-sans [&_input]:text-[clamp(16px,4.5vw,20px)] [&_input]:font-bold";
+
+// two side-by-side choice cards (phone/email, high school/college). The dot
+// sits in the card's corner so the label centres on the card, not beside it.
+const pickCardGroupClass =
+  "mt-8 grid-cols-2 gap-4 sm:grid-cols-2 [&>label]:relative [&>label]:justify-center [&>label]:rounded-2xl [&>label]:bg-black/20 [&_[data-slot=radio-group-item]]:absolute [&_[data-slot=radio-group-item]]:top-3 [&_[data-slot=radio-group-item]]:left-3 [&_[data-slot=radio-group-item]]:mt-0";
 
 const backClass =
   "border-white/15 font-semibold text-white/70 hover:border-white/30 hover:bg-transparent hover:text-white";
@@ -1215,7 +1221,7 @@ function OnboardPageInner() {
                     options={CONTACT_OPTIONS}
                     value={selectedType ?? ""}
                     onValueChange={(v) => setSelectedType(v as ContactType)}
-                    className="mt-8 grid-cols-2 gap-4 sm:grid-cols-2 [&>label]:justify-center [&>label]:rounded-2xl [&>label]:bg-black/20"
+                    className={pickCardGroupClass}
                   />
                 </div>
               )}
@@ -1241,12 +1247,15 @@ function OnboardPageInner() {
                     {step === "phone" ? (
                       <div className="flex gap-3">
                         <Field label="Ghana" className="w-auto shrink-0">
-                          <Input
-                            readOnly
-                            tabIndex={-1}
-                            value="🇬🇭 +233"
-                            className={`${inputClass} w-28`}
-                          />
+                          <div className="relative">
+                            <GhanaFlag className="pointer-events-none absolute top-1/2 left-3.5 h-3.5 w-auto -translate-y-1/2 rounded-[2px]" />
+                            <Input
+                              readOnly
+                              tabIndex={-1}
+                              value="+233"
+                              className={`${inputClass} w-28 pl-11`}
+                            />
+                          </div>
                         </Field>
                         <div className="flex-1">
                           <Field
@@ -1624,7 +1633,7 @@ function OnboardPageInner() {
                       }))}
                       value={card}
                       onValueChange={(v) => setCard(v as CampusCard)}
-                      className="mt-8 grid-cols-2 gap-4 sm:grid-cols-2 [&>label]:justify-center [&>label]:rounded-2xl [&>label]:bg-black/20"
+                      className={pickCardGroupClass}
                     />
                   )}
                   <ApiErrorText error={error} className="mt-4" />
